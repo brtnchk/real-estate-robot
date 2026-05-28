@@ -21,6 +21,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"golang.org/x/time/rate"
@@ -44,34 +45,37 @@ type NextTask struct {
 // Fetcher is the queue.Handler that drives the fetch → store → publish chain.
 // All fields are required; the easiest way to construct one is via New().
 type Fetcher struct {
-	HTTP      *http.Client
-	Limiter   *rate.Limiter
-	UserAgent string
-	DB        *sqlc.Queries
-	Publisher *queue.Publisher
-	Log       *slog.Logger
+	HTTP               *http.Client
+	Limiter            *rate.Limiter
+	UserAgent          string
+	DB                 *sqlc.Queries
+	Publisher          *queue.Publisher
+	Log                *slog.Logger
+	MinRefetchInterval time.Duration // skip URL if fetched within this window (0 = always fetch)
 }
 
 // Config bundles construction parameters for New.
 type Config struct {
-	RPS           float64       // requests per second (token bucket rate)
-	Burst         int           // burst size (max tokens in the bucket)
-	HTTPTimeout   time.Duration // per-request deadline
-	UserAgent     string
-	DB            *sqlc.Queries
-	Publisher     *queue.Publisher
-	Log           *slog.Logger
+	RPS                float64       // requests per second (token bucket rate)
+	Burst              int           // burst size (max tokens in the bucket)
+	HTTPTimeout        time.Duration // per-request deadline
+	UserAgent          string
+	MinRefetchInterval time.Duration // see Fetcher.MinRefetchInterval
+	DB                 *sqlc.Queries
+	Publisher          *queue.Publisher
+	Log                *slog.Logger
 }
 
 // New constructs a Fetcher with sensible HTTP client defaults.
 func New(cfg Config) *Fetcher {
 	return &Fetcher{
-		HTTP:      httpc.New(cfg.HTTPTimeout),
-		Limiter:   rate.NewLimiter(rate.Limit(cfg.RPS), cfg.Burst),
-		UserAgent: cfg.UserAgent,
-		DB:        cfg.DB,
-		Publisher: cfg.Publisher,
-		Log:       cfg.Log,
+		HTTP:               httpc.New(cfg.HTTPTimeout),
+		Limiter:            rate.NewLimiter(rate.Limit(cfg.RPS), cfg.Burst),
+		UserAgent:          cfg.UserAgent,
+		DB:                 cfg.DB,
+		Publisher:          cfg.Publisher,
+		Log:                cfg.Log,
+		MinRefetchInterval: cfg.MinRefetchInterval,
 	}
 }
 
@@ -89,6 +93,31 @@ func (f *Fetcher) Handle(ctx context.Context, d amqp.Delivery) error {
 	}
 
 	log := f.Log.With("url", task.URL)
+
+	// Dedup gate: if we already fetched this URL recently, ack and skip.
+	// This is what makes "scheduler republishes discovery every 30s" safe —
+	// the same listing URL might surface every cycle, but we only spend
+	// an HTTP round-trip on it once per MinRefetchInterval.
+	if f.MinRefetchInterval > 0 {
+		latest, err := f.DB.GetLatestFetchByURL(ctx, task.URL)
+		switch {
+		case err == nil:
+			if recentlyFetched(latest.FetchedAt.Time, time.Now(), f.MinRefetchInterval) {
+				// Info-level: this is a meaningful event for capacity/cost
+				// monitoring — every skipped fetch is a saved OLX hit.
+				log.Info("skip: fetched recently",
+					"age", time.Since(latest.FetchedAt.Time).Round(time.Second),
+					"window", f.MinRefetchInterval,
+				)
+				return nil
+			}
+		case errors.Is(err, pgx.ErrNoRows):
+			// First time we see this URL — fall through to the fetch.
+		default:
+			// Real DB error — return it, message goes to retry.
+			return fmt.Errorf("dedup lookup: %w", err)
+		}
+	}
 
 	// Wait for a rate-limit token. This is what keeps us polite to OLX
 	// regardless of how many consumers are running — the limiter is local
@@ -186,6 +215,16 @@ func (f *Fetcher) fetch(ctx context.Context, url string) ([]byte, int, http.Head
 	}
 
 	return body, resp.StatusCode, resp.Header, nil
+}
+
+// recentlyFetched returns true when fetchedAt is within (now - interval).
+// Extracted as a pure function so the dedup decision is unit-testable
+// without bringing up a Postgres for a single inequality check.
+func recentlyFetched(fetchedAt, now time.Time, interval time.Duration) bool {
+	if interval <= 0 || fetchedAt.IsZero() {
+		return false
+	}
+	return now.Sub(fetchedAt) < interval
 }
 
 // mustMarshalHeaders flattens the http.Header to JSON. We only keep a

@@ -28,6 +28,8 @@ func main() {
 	prefetch := flag.Int("prefetch", 1, "consumer in-flight cap")
 	maxRetries := flag.Int("max-retries", 3, "retry budget before promoting to dead queue")
 	httpTimeout := flag.Duration("http-timeout", 30*time.Second, "per-request HTTP timeout")
+	minRefetch := flag.Duration("min-refetch", 30*time.Minute,
+		"skip a URL if it was fetched within this window (0 disables dedup)")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
@@ -57,13 +59,14 @@ func main() {
 	defer func() { _ = pub.Close() }()
 
 	f := fetcher.New(fetcher.Config{
-		RPS:         *rps,
-		Burst:       *burst,
-		HTTPTimeout: *httpTimeout,
-		UserAgent:   "olx-real-estate-robot (https://github.com/brtnchk/real-estate-robot)",
-		DB:          sqlc.New(pool),
-		Publisher:   pub,
-		Log:         log,
+		RPS:                *rps,
+		Burst:              *burst,
+		HTTPTimeout:        *httpTimeout,
+		MinRefetchInterval: *minRefetch,
+		UserAgent:          "olx-real-estate-robot (https://github.com/brtnchk/real-estate-robot)",
+		DB:                 sqlc.New(pool),
+		Publisher:          pub,
+		Log:                log,
 	})
 
 	cons, err := queue.NewConsumer(amqpURL, pub, queue.ConsumerConfig{
@@ -83,6 +86,7 @@ func main() {
 		"prefetch", *prefetch,
 		"max_retries", *maxRetries,
 		"http_timeout", *httpTimeout,
+		"min_refetch", *minRefetch,
 	)
 	if err := cons.Run(ctx); err != nil {
 		log.Error("consumer run", "err", err)

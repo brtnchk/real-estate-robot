@@ -1,4 +1,4 @@
-.PHONY: up down logs ps psql rabbit-ui migrate migrate-down migrate-status topology build publish consume sqlc db-demo fetcher parser enricher discovery classify refresh-stats grafana test test-v test-cover
+.PHONY: up down logs ps psql rabbit-ui migrate migrate-down migrate-status topology build publish consume sqlc db-demo fetcher parser enricher discovery scheduler classify refresh-stats grafana test test-v test-cover
 
 # --- infra ------------------------------------------------------------------
 
@@ -84,6 +84,12 @@ enricher:
 #   make publish q=listings.discover m='{"search_url":"...","page":1}'
 discovery:
 	AMQP_URL="$(AMQP_URL)" go run ./cmd/discovery
+
+# Run the scheduler. Re-publishes discovery tasks every --interval so the
+# pipeline picks up new OLX listings without manual prodding.
+#   make scheduler args='--interval 10m --searches https://www.olx.ua/uk/...'
+scheduler:
+	AMQP_URL="$(AMQP_URL)" go run ./cmd/scheduler $(args)
 
 # Rank sellers by real_seller_score. Pass --refresh after adding listings.
 #   make classify
