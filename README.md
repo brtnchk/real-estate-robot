@@ -1,5 +1,8 @@
 # OLX Real Estate Robot
 
+[![CI](https://github.com/brtnchk/real-estate-robot/actions/workflows/ci.yml/badge.svg)](https://github.com/brtnchk/real-estate-robot/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 A Go service that crawls real-estate listings from OLX and figures out
 which sellers are **real private owners** as opposed to agencies, resellers,
 and spam accounts.

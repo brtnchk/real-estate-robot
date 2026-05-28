@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # If anyone forgets to run `go mod tidy` after touching deps,
+      # this fails the build instead of letting it merge.
+      - name: go.mod is tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go build
+        run: go build ./...
+
+      # -race surfaces data races that would otherwise be invisible
+      # in single-threaded CI runs. Slower but worth it for portfolio code.
+      - name: go test (with race detector)
+        run: go test -race ./...
+
+      # Catches "edited the SQL but forgot to regenerate the Go code".
+      - name: sqlc-generated code is up to date
+        run: |
+          go tool sqlc generate
+          git diff --exit-code -- internal/db/sqlc/
