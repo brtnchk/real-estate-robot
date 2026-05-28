@@ -72,10 +72,11 @@ INSERT INTO sellers (
     phone_hash,
     avatar_url,
     location,
+    registered_at,
     raw,
     last_scraped_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7, $8, NOW()
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, NOW()
 )
 ON CONFLICT (olx_user_id) DO UPDATE SET
     display_name    = EXCLUDED.display_name,
@@ -84,6 +85,7 @@ ON CONFLICT (olx_user_id) DO UPDATE SET
     phone_hash      = EXCLUDED.phone_hash,
     avatar_url      = EXCLUDED.avatar_url,
     location        = EXCLUDED.location,
+    registered_at   = COALESCE(sellers.registered_at, EXCLUDED.registered_at),
     raw             = EXCLUDED.raw,
     last_seen_at    = NOW(),
     last_scraped_at = NOW()
@@ -91,14 +93,15 @@ RETURNING id, olx_user_id, display_name, profile_url, registered_at, is_business
 `
 
 type UpsertSellerParams struct {
-	OlxUserID   string          `json:"olx_user_id"`
-	DisplayName pgtype.Text     `json:"display_name"`
-	ProfileUrl  pgtype.Text     `json:"profile_url"`
-	IsBusiness  bool            `json:"is_business"`
-	PhoneHash   pgtype.Text     `json:"phone_hash"`
-	AvatarUrl   pgtype.Text     `json:"avatar_url"`
-	Location    pgtype.Text     `json:"location"`
-	Raw         json.RawMessage `json:"raw"`
+	OlxUserID    string             `json:"olx_user_id"`
+	DisplayName  pgtype.Text        `json:"display_name"`
+	ProfileUrl   pgtype.Text        `json:"profile_url"`
+	IsBusiness   bool               `json:"is_business"`
+	PhoneHash    pgtype.Text        `json:"phone_hash"`
+	AvatarUrl    pgtype.Text        `json:"avatar_url"`
+	Location     pgtype.Text        `json:"location"`
+	RegisteredAt pgtype.Timestamptz `json:"registered_at"`
+	Raw          json.RawMessage    `json:"raw"`
 }
 
 // Insert a seller, or update the mutable fields if olx_user_id already
@@ -106,6 +109,10 @@ type UpsertSellerParams struct {
 // insert and update; first_seen_at / created_at stay frozen (the schema
 // defaults handle the insert case, ON CONFLICT leaves them untouched).
 // updated_at is bumped automatically by the sellers_set_updated_at trigger.
+//
+// registered_at uses COALESCE on conflict: once we have observed when a
+// seller joined OLX, we keep that value and don't let a later scrape
+// (which might come back NULL on a partial page) erase it.
 func (q *Queries) UpsertSeller(ctx context.Context, arg UpsertSellerParams) (Seller, error) {
 	row := q.db.QueryRow(ctx, upsertSeller,
 		arg.OlxUserID,
@@ -115,6 +122,7 @@ func (q *Queries) UpsertSeller(ctx context.Context, arg UpsertSellerParams) (Sel
 		arg.PhoneHash,
 		arg.AvatarUrl,
 		arg.Location,
+		arg.RegisteredAt,
 		arg.Raw,
 	)
 	var i Seller

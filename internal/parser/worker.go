@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -29,11 +31,7 @@ type NextTask struct {
 	OlxUserID string `json:"olx_user_id"`
 }
 
-// Worker is the queue.Handler implementation: load HTML by fetch_id, parse
-// it, write seller + listing + snapshot in one transaction, then fan out
-// a seller-enrich task.
-//
-// All fields are required.
+// Worker is the queue.Handler implementation.
 type Worker struct {
 	Pool      *pgxpool.Pool
 	Queries   *sqlc.Queries
@@ -53,16 +51,11 @@ func (w *Worker) Handle(ctx context.Context, d amqp.Delivery) error {
 
 	log := w.Log.With("fetch_id", task.FetchID, "url", task.URL)
 
-	// Load the raw HTML by id. Note we read OUTSIDE the transaction —
-	// reads don't need to be serialized with writes here, and keeping
-	// the transaction small reduces lock contention.
 	fetch, err := w.Queries.GetFetchByID(ctx, task.FetchID)
 	if err != nil {
 		return fmt.Errorf("load fetch row: %w", err)
 	}
 	if fetch.Html == nil {
-		// fetcher should never publish parse tasks for 4xx fetches, but
-		// guard anyway — defensive coding around message contracts.
 		log.Warn("fetch row has no html, skipping")
 		return nil
 	}
@@ -72,12 +65,16 @@ func (w *Worker) Handle(ctx context.Context, d amqp.Delivery) error {
 		return fmt.Errorf("parse: %w", err)
 	}
 
-	snapHash := snapshotHash(res.Listing.Title) // expand as we extract more fields
+	snapHash := snapshotHash(
+		res.Listing.Title,
+		res.Listing.Status,
+		formatFloatPtr(res.Listing.Price),
+		res.Listing.Currency,
+	)
 
-	// pgx.BeginFunc handles Begin / Commit / Rollback. The callback runs
-	// inside the transaction; returning nil commits, returning err rolls
-	// back. WithTx(tx) re-binds the sqlc Queries to the transaction's
-	// session so every query inside goes through the same tx.
+	// One transaction: seller + listing + snapshot all commit together
+	// or not at all. WithTx re-binds the sqlc Queries to this tx so every
+	// query goes through the same session.
 	var sellerID, listingID int64
 	var snapAffected int64
 
@@ -85,13 +82,12 @@ func (w *Worker) Handle(ctx context.Context, d amqp.Delivery) error {
 		qtx := w.Queries.WithTx(tx)
 
 		seller, err := qtx.UpsertSeller(ctx, sqlc.UpsertSellerParams{
-			OlxUserID:   res.Seller.OlxUserID,
-			DisplayName: pgtype.Text{String: res.Seller.DisplayName, Valid: true},
-			// Stub profile URL — the real parser will pluck this from
-			// the listing page. Using example.com so the enrich worker
-			// has something that actually returns HTTP 200 to fetch.
-			ProfileUrl: pgtype.Text{String: "https://www.example.com/", Valid: true},
-			Raw:        json.RawMessage(`{"source":"parser-stub"}`),
+			OlxUserID:    res.Seller.OlxUserID,
+			DisplayName:  text(res.Seller.DisplayName),
+			ProfileUrl:   text(res.Seller.ProfileURL),
+			IsBusiness:   res.Seller.IsBusiness,
+			RegisteredAt: timestamptzPtr(res.Seller.RegisteredAt),
+			Raw:          json.RawMessage(`{"source":"parser"}`),
 		})
 		if err != nil {
 			return fmt.Errorf("upsert seller: %w", err)
@@ -102,9 +98,20 @@ func (w *Worker) Handle(ctx context.Context, d amqp.Delivery) error {
 			OlxListingID: res.Listing.OlxListingID,
 			SellerID:     pgtype.Int8{Int64: seller.ID, Valid: true},
 			Url:          res.Listing.URL,
-			Title:        pgtype.Text{String: res.Listing.Title, Valid: true},
-			Description:  pgtype.Text{String: res.Listing.Description, Valid: true},
-			Raw:          json.RawMessage(`{"source":"parser-stub"}`),
+			Title:        text(res.Listing.Title),
+			Description:  text(res.Listing.Description),
+			Price:        numericFromFloatPtr(res.Listing.Price),
+			Currency:     text(res.Listing.Currency),
+			Status:       defaultIfEmpty(res.Listing.Status, "active"),
+			PropertyType: text(res.Listing.PropertyType),
+			City:         text(res.Listing.City),
+			District:     text(res.Listing.District),
+			Address:      text(res.Listing.Address),
+			Lat:          float8Ptr(res.Listing.Lat),
+			Lon:          float8Ptr(res.Listing.Lon),
+			PostedAt:     timestamptzPtr(res.Listing.PostedAt),
+			Attributes:   nonNilJSON(res.Listing.Attributes),
+			Raw:          json.RawMessage(`{"source":"parser"}`),
 		})
 		if err != nil {
 			return fmt.Errorf("upsert listing: %w", err)
@@ -113,10 +120,10 @@ func (w *Worker) Handle(ctx context.Context, d amqp.Delivery) error {
 
 		affected, err := qtx.InsertListingSnapshot(ctx, sqlc.InsertListingSnapshotParams{
 			ListingID: listing.ID,
-			Price:     pgtype.Numeric{},                                       // unset for now
-			Currency:  pgtype.Text{},                                          //
-			Status:    pgtype.Text{String: "active", Valid: true},
-			Title:     pgtype.Text{String: res.Listing.Title, Valid: true},
+			Price:     numericFromFloatPtr(res.Listing.Price),
+			Currency:  text(res.Listing.Currency),
+			Status:    text(res.Listing.Status),
+			Title:     text(res.Listing.Title),
 			RawHash:   snapHash,
 		})
 		if err != nil {
@@ -131,14 +138,16 @@ func (w *Worker) Handle(ctx context.Context, d amqp.Delivery) error {
 	}
 
 	log.Info("parsed and stored",
+		"olx_listing_id", res.Listing.OlxListingID,
 		"seller_id", sellerID,
 		"listing_id", listingID,
 		"snapshot_inserted", snapAffected > 0,
+		"title", res.Listing.Title,
+		"is_business", res.Seller.IsBusiness,
 	)
 
-	// After the tx commits, fan out a seller-enrich task. If this publish
-	// fails, the message will be retried — the transaction's idempotent
-	// upserts make re-runs safe.
+	// After commit, fan out a seller-enrich task. The retry of a failed
+	// publish hits the same idempotent upserts → safe.
 	next, _ := json.Marshal(NextTask{OlxUserID: res.Seller.OlxUserID})
 	if err := w.Publisher.Publish(ctx, queue.QueueSellersEnrich, next); err != nil {
 		return fmt.Errorf("publish enrich task: %w", err)
@@ -148,10 +157,73 @@ func (w *Worker) Handle(ctx context.Context, d amqp.Delivery) error {
 }
 
 // snapshotHash builds the dedup key for listing_snapshots. We hash the
-// concatenation of every "state" field we care about — when the parser
-// learns new fields (price, status, location), they get added here so
-// snapshots are written on any meaningful change.
+// joined "state" fields we care about; if any of them changes, a new
+// snapshot row is created. Adding new fields here is a deliberate act —
+// it invalidates existing dedup decisions for the next pass.
 func snapshotHash(parts ...string) string {
-	h := sha256NewSum(parts...)
-	return h
+	return sha256NewSum(parts...)
+}
+
+// --- pgtype helpers --------------------------------------------------------
+
+// text wraps a string as a non-null pgtype.Text. Empty string becomes a
+// NULL — we don't store distinguish between "" and unset in this schema.
+func text(s string) pgtype.Text {
+	if s == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: s, Valid: true}
+}
+
+func timestamptzPtr(t *time.Time) pgtype.Timestamptz {
+	if t == nil || t.IsZero() {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: *t, Valid: true}
+}
+
+func float8Ptr(f *float64) pgtype.Float8 {
+	if f == nil {
+		return pgtype.Float8{}
+	}
+	return pgtype.Float8{Float64: *f, Valid: true}
+}
+
+// numericFromFloatPtr converts a *float64 to a pgtype.Numeric by routing
+// through the textual representation. Float→big.Int conversion would lose
+// precision for non-integer prices; the string round-trip is exact for
+// values that fit in NUMERIC(14,2).
+func numericFromFloatPtr(f *float64) pgtype.Numeric {
+	if f == nil {
+		return pgtype.Numeric{}
+	}
+	var n pgtype.Numeric
+	if err := n.Scan(strconv.FormatFloat(*f, 'f', 2, 64)); err != nil {
+		return pgtype.Numeric{}
+	}
+	return n
+}
+
+func defaultIfEmpty(s, fallback string) string {
+	if s == "" {
+		return fallback
+	}
+	return s
+}
+
+func nonNilJSON(j json.RawMessage) json.RawMessage {
+	if len(j) == 0 {
+		return json.RawMessage(`{}`)
+	}
+	return j
+}
+
+// formatFloatPtr is a small helper used only by snapshotHash so the hash is
+// stable across reparses regardless of whether the float was parsed as 43000.0
+// or as 43000.00.
+func formatFloatPtr(f *float64) string {
+	if f == nil {
+		return ""
+	}
+	return strconv.FormatFloat(*f, 'f', 2, 64)
 }

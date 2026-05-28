@@ -86,8 +86,6 @@ type InsertListingSnapshotParams struct {
 // Append-only history of (price, status, title) changes per listing.
 // The unique constraint on (listing_id, raw_hash) means re-parsing an
 // unchanged listing is a no-op; only real changes create new rows.
-// :execrows returns the affected count so the worker can log whether
-// a new snapshot was actually persisted (1) or deduped (0).
 func (q *Queries) InsertListingSnapshot(ctx context.Context, arg InsertListingSnapshotParams) (int64, error) {
 	result, err := q.db.Exec(ctx, insertListingSnapshot,
 		arg.ListingID,
@@ -110,28 +108,67 @@ INSERT INTO listings (
     url,
     title,
     description,
+    price,
+    currency,
+    status,
+    deal_type,
+    property_type,
+    city,
+    district,
+    address,
+    lat,
+    lon,
+    posted_at,
+    attributes,
     raw,
     last_scraped_at
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, NOW()
+    $1, $2, $3, $4, $5,
+    $6, $7, $8, $9, $10,
+    $11, $12, $13, $14, $15,
+    $16, $17, $18, NOW()
 )
 ON CONFLICT (olx_listing_id) DO UPDATE SET
-    seller_id       = EXCLUDED.seller_id,
-    title           = EXCLUDED.title,
-    description     = EXCLUDED.description,
-    raw             = EXCLUDED.raw,
-    last_seen_at    = NOW(),
+    seller_id     = EXCLUDED.seller_id,
+    title         = EXCLUDED.title,
+    description   = EXCLUDED.description,
+    price         = EXCLUDED.price,
+    currency      = EXCLUDED.currency,
+    status        = EXCLUDED.status,
+    deal_type     = EXCLUDED.deal_type,
+    property_type = EXCLUDED.property_type,
+    city          = EXCLUDED.city,
+    district      = EXCLUDED.district,
+    address       = EXCLUDED.address,
+    lat           = EXCLUDED.lat,
+    lon           = EXCLUDED.lon,
+    posted_at     = EXCLUDED.posted_at,
+    attributes    = EXCLUDED.attributes,
+    raw           = EXCLUDED.raw,
+    last_seen_at  = NOW(),
     last_scraped_at = NOW()
 RETURNING id, olx_listing_id, seller_id, url, title, description, price, currency, deal_type, property_type, rooms, area_total, area_living, floor, floors_total, city, district, address, lat, lon, posted_at, updated_at_remote, status, attributes, raw, first_seen_at, last_seen_at, last_scraped_at, created_at, updated_at
 `
 
 type UpsertListingParams struct {
-	OlxListingID string          `json:"olx_listing_id"`
-	SellerID     pgtype.Int8     `json:"seller_id"`
-	Url          string          `json:"url"`
-	Title        pgtype.Text     `json:"title"`
-	Description  pgtype.Text     `json:"description"`
-	Raw          json.RawMessage `json:"raw"`
+	OlxListingID string             `json:"olx_listing_id"`
+	SellerID     pgtype.Int8        `json:"seller_id"`
+	Url          string             `json:"url"`
+	Title        pgtype.Text        `json:"title"`
+	Description  pgtype.Text        `json:"description"`
+	Price        pgtype.Numeric     `json:"price"`
+	Currency     pgtype.Text        `json:"currency"`
+	Status       string             `json:"status"`
+	DealType     pgtype.Text        `json:"deal_type"`
+	PropertyType pgtype.Text        `json:"property_type"`
+	City         pgtype.Text        `json:"city"`
+	District     pgtype.Text        `json:"district"`
+	Address      pgtype.Text        `json:"address"`
+	Lat          pgtype.Float8      `json:"lat"`
+	Lon          pgtype.Float8      `json:"lon"`
+	PostedAt     pgtype.Timestamptz `json:"posted_at"`
+	Attributes   json.RawMessage    `json:"attributes"`
+	Raw          json.RawMessage    `json:"raw"`
 }
 
 // Insert or update by olx_listing_id. Same timestamp semantics as sellers:
@@ -144,6 +181,18 @@ func (q *Queries) UpsertListing(ctx context.Context, arg UpsertListingParams) (L
 		arg.Url,
 		arg.Title,
 		arg.Description,
+		arg.Price,
+		arg.Currency,
+		arg.Status,
+		arg.DealType,
+		arg.PropertyType,
+		arg.City,
+		arg.District,
+		arg.Address,
+		arg.Lat,
+		arg.Lon,
+		arg.PostedAt,
+		arg.Attributes,
 		arg.Raw,
 	)
 	var i Listing

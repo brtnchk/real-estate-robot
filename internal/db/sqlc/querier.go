@@ -23,8 +23,6 @@ type Querier interface {
 	// Append-only history of (price, status, title) changes per listing.
 	// The unique constraint on (listing_id, raw_hash) means re-parsing an
 	// unchanged listing is a no-op; only real changes create new rows.
-	// :execrows returns the affected count so the worker can log whether
-	// a new snapshot was actually persisted (1) or deduped (0).
 	InsertListingSnapshot(ctx context.Context, arg InsertListingSnapshotParams) (int64, error)
 	// Stamp the freshness gate. Called by the enrich worker after it has
 	// finished (successfully or not — even a 404'd profile counts, otherwise
@@ -39,6 +37,10 @@ type Querier interface {
 	// insert and update; first_seen_at / created_at stay frozen (the schema
 	// defaults handle the insert case, ON CONFLICT leaves them untouched).
 	// updated_at is bumped automatically by the sellers_set_updated_at trigger.
+	//
+	// registered_at uses COALESCE on conflict: once we have observed when a
+	// seller joined OLX, we keep that value and don't let a later scrape
+	// (which might come back NULL on a partial page) erase it.
 	UpsertSeller(ctx context.Context, arg UpsertSellerParams) (Seller, error)
 }
 

@@ -9,8 +9,6 @@ and spam accounts.
 
 > **Status:** work in progress. Built as a portfolio project to explore
 > Go, message queues, and applied data work on a real, messy dataset.
-> The HTML parser is currently a placeholder while the queue + DB
-> infrastructure is exercised end-to-end.
 
 ## Why
 
@@ -80,6 +78,11 @@ after a configurable retry budget.
 
 ## Design highlights
 
+- **Parser reads OLX's `__PRERENDERED_STATE__` JSON** instead of scraping
+  the DOM. OLX is Next.js-style and ships every listing's full state as
+  an inline JSON blob — orders of magnitude more stable than CSS
+  selectors against rendered HTML. Falls back to `<title>` extraction
+  when the blob is absent (synthetic test HTML, non-OLX pages).
 - **Three-exchange topology** (`olx.work` / `olx.retry` / `olx.dead`)
   with per-stage retry budgets driven by the `x-death` header. Failed
   HTTP fetches loop through the retry queue with a TTL hop; permanent
@@ -242,7 +245,9 @@ applied as new migrations, never by editing old ones.
 - [x] Seller-enrich worker — fan-out + `last_enriched_at` cycle gate
 - [x] Discovery worker — self-paginating search-page crawler
 - [x] Unit tests for pure helpers
-- [ ] Real OLX HTML parser (currently a stub returning placeholder data)
+- [x] Real OLX HTML parser via `__PRERENDERED_STATE__` JSON extraction
+- [ ] Relative-URL resolution in discovery (OLX search pages use `/d/...`,
+      not absolute URLs)
 - [ ] testcontainers-go integration tests for worker `Handle` methods
 - [ ] Classification: heuristic "real seller" score over `seller_stats`
 - [ ] CLI for ad-hoc queries against the dataset
@@ -254,9 +259,9 @@ applied as new migrations, never by editing old ones.
 - This is an exploratory / portfolio project. It does not attempt to
   defeat captchas or seriously evade rate limits — the rate limiter is
   there to be polite, not stealthy.
-- The HTML extractor is currently a **placeholder**: it pulls `<title>`
-  out of any HTML and synthesizes deterministic stub IDs from the URL.
-  Replacing it with a real OLX parser is a focused next step that
-  requires a real listing page in hand; the rest of the pipeline is
-  built around an opaque `parser.Parse(url, html) → Result` so swapping
-  it is a single-file change.
+- The parser still falls back to a `<title>`-only stub when the input
+  is not a real OLX page (synthetic test HTML, accidental non-OLX URL).
+  Synthetic IDs are derived from the URL so downstream upserts get a
+  stable key. The real OLX path extracts everything (price, currency,
+  city, district, lat/lon, seller UUID, registration date, business
+  flag) from the `__PRERENDERED_STATE__` JSON blob.
