@@ -1,0 +1,10 @@
+.env
+*.log
+bin/
+tmp/
+.idea/
+.vscode/
+
+# Personal Claude Code context — not for the public repo
+CLAUDE.local.md
+.claude/settings.local.json
