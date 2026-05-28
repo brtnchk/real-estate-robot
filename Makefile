@@ -1,4 +1,4 @@
-.PHONY: up down logs ps psql rabbit-ui migrate migrate-down migrate-status topology build publish consume sqlc db-demo fetcher parser enricher test test-v test-cover
+.PHONY: up down logs ps psql rabbit-ui migrate migrate-down migrate-status topology build publish consume sqlc db-demo fetcher parser enricher discovery test test-v test-cover
 
 # --- infra ------------------------------------------------------------------
 
@@ -79,6 +79,11 @@ parser:
 # Run the seller-enrich worker. Ctrl+C to stop.
 enricher:
 	DATABASE_URL="$(DB_URL)" AMQP_URL="$(AMQP_URL)" go run ./cmd/enricher
+
+# Run the discovery worker. Ctrl+C to stop. Bootstrap with:
+#   make publish q=listings.discover m='{"search_url":"...","page":1}'
+discovery:
+	AMQP_URL="$(AMQP_URL)" go run ./cmd/discovery
 
 # --- tests ------------------------------------------------------------------
 
