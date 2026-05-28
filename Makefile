@@ -1,4 +1,4 @@
-.PHONY: up down logs ps psql rabbit-ui migrate migrate-down migrate-status topology build publish consume sqlc db-demo fetcher
+.PHONY: up down logs ps psql rabbit-ui migrate migrate-down migrate-status topology build publish consume sqlc db-demo fetcher parser
 
 # --- infra ------------------------------------------------------------------
 
@@ -71,3 +71,7 @@ db-demo:
 # Run the fetcher worker. Ctrl+C to stop.
 fetcher:
 	DATABASE_URL="$(DB_URL)" AMQP_URL="$(AMQP_URL)" go run ./cmd/fetcher
+
+# Run the parser worker. Ctrl+C to stop.
+parser:
+	DATABASE_URL="$(DB_URL)" AMQP_URL="$(AMQP_URL)" go run ./cmd/parser

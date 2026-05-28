@@ -9,15 +9,27 @@ import (
 )
 
 type Querier interface {
+	CountListings(ctx context.Context) (int64, error)
 	CountSellers(ctx context.Context) (int64, error)
 	GetFetchByID(ctx context.Context, id int64) (ListingHtmlFetch, error)
 	GetLatestFetchByURL(ctx context.Context, url string) (ListingHtmlFetch, error)
+	GetListingByOlxID(ctx context.Context, olxListingID string) (Listing, error)
 	GetSellerByOlxID(ctx context.Context, olxUserID string) (Seller, error)
 	// Append-only: every fetch attempt that lands here gets a new row.
 	// The fetcher writes successes (status 2xx, body present) and permanent
 	// failures (4xx, body NULL). Transient failures are NOT stored here —
 	// they live in retry queues + application logs.
 	InsertFetch(ctx context.Context, arg InsertFetchParams) (ListingHtmlFetch, error)
+	// Append-only history of (price, status, title) changes per listing.
+	// The unique constraint on (listing_id, raw_hash) means re-parsing an
+	// unchanged listing is a no-op; only real changes create new rows.
+	// :execrows returns the affected count so the worker can log whether
+	// a new snapshot was actually persisted (1) or deduped (0).
+	InsertListingSnapshot(ctx context.Context, arg InsertListingSnapshotParams) (int64, error)
+	// Insert or update by olx_listing_id. Same timestamp semantics as sellers:
+	// created_at / first_seen_at frozen on insert, last_seen_at / last_scraped_at
+	// bumped on every call, updated_at handled by the trigger.
+	UpsertListing(ctx context.Context, arg UpsertListingParams) (Listing, error)
 	// Insert a seller, or update the mutable fields if olx_user_id already
 	// exists. last_seen_at and last_scraped_at are bumped to NOW() on both
 	// insert and update; first_seen_at / created_at stay frozen (the schema
