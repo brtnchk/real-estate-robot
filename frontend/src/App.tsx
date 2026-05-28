@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { CITIES } from './cities'
+import { CITIES, CATEGORIES } from './cities'
 import { WorkerStatus } from './WorkerStatus'
 
 interface Listing {
@@ -84,6 +84,7 @@ function App() {
   const [propertyType, setPropertyType] = useState('')
   const [dealType, setDealType] = useState('')
   const [city, setCity] = useState('')
+  const [crawlCategory, setCrawlCategory] = useState('prodazha-kvartir')
 
   // polling state after a crawl is triggered from SearchPanel
   const [crawlingCity, setCrawlingCity] = useState<string | null>(null)
@@ -181,6 +182,15 @@ function App() {
 
       <div className="filters">
         <label>
+          <span>Що шукати</span>
+          <select value={crawlCategory} onChange={(e) => setCrawlCategory(e.target.value)}>
+            {CATEGORIES.map((c) => (
+              <option key={c.slug} value={c.slug}>{c.name}</option>
+            ))}
+          </select>
+        </label>
+
+        <label>
           <span>Місто</span>
           <select
             value={city}
@@ -196,7 +206,7 @@ function App() {
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
                     city_slug: slug,
-                    category_slug: categorySlugForCrawl(propertyType, dealType),
+                    category_slug: crawlCategory,
                   }),
                 }).catch(() => {
                   setCrawlingCity(null)
