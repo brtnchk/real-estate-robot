@@ -1,3 +1,34 @@
+/* --- Worker status bar --- */
+.worker-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: white;
+  border-radius: 8px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.worker-status-label { color: #999; font-weight: 500; }
+.worker-chip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 12px;
+  font-weight: 500;
+}
+.worker-chip--ok  { background: #e6f4ea; color: #1a6130; }
+.worker-chip--off { background: #f5f5f5; color: #999; }
+.worker-dot {
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.worker-chip--ok  .worker-dot { background: #2e7d32; }
+.worker-chip--off .worker-dot { background: #bbb; }
+
 /* --- Search panel (city discovery trigger) ---- */
 .search-panel {
   background: white;

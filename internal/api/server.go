@@ -22,9 +22,12 @@ import (
 
 // Server holds dependencies and exposes Handler() for the HTTP server.
 type Server struct {
-	Queries   *sqlc.Queries
-	Publisher *queue.Publisher // nil when AMQP not configured; crawl endpoint returns 503
-	Log       *slog.Logger
+	Queries     *sqlc.Queries
+	Publisher   *queue.Publisher // nil when AMQP not configured; crawl endpoint returns 503
+	Log         *slog.Logger
+	RabbitMgmt  string // base URL of the management HTTP API, e.g. http://localhost:15672
+	RabbitUser  string
+	RabbitPass  string
 }
 
 // Handler wires the routes and middleware (CORS for local dev).
@@ -36,6 +39,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/categories", s.categories)
 	mux.HandleFunc("GET /api/cities", s.cities)
 	mux.HandleFunc("POST /api/crawl", s.crawl)
+	mux.HandleFunc("GET /api/worker-status", s.workerStatus)
 	return logRequest(s.Log, cors(mux))
 }
 
@@ -142,6 +146,56 @@ func (s *Server) cities(w http.ResponseWriter, r *http.Request) {
 		out = append(out, CityCount{City: r.City.String, Count: r.N})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// workerStatus queries the RabbitMQ Management HTTP API to check whether
+// each pipeline worker has an active consumer on its queue.
+// Uses /api/consumers (real-time) instead of /api/queues (stats have ~5 s lag).
+func (s *Server) workerStatus(w http.ResponseWriter, r *http.Request) {
+	type WorkerStatus struct {
+		Name      string `json:"name"`
+		Queue     string `json:"queue"`
+		Running   bool   `json:"running"`
+		Consumers int    `json:"consumers"`
+	}
+
+	workerQueues := map[string]string{
+		"discovery": "listings.discover",
+		"fetcher":   "listings.fetch",
+		"parser":    "listings.parse",
+		"enricher":  "sellers.enrich",
+	}
+	order := []string{"discovery", "fetcher", "parser", "enricher"}
+
+	// /api/consumers returns all live consumers — no stats lag.
+	url := fmt.Sprintf("%s/api/consumers/%%2F", s.RabbitMgmt)
+	req, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, url, nil)
+	req.SetBasicAuth(s.RabbitUser, s.RabbitPass)
+
+	counts := make(map[string]int) // queue name → consumer count
+	resp, err := http.DefaultClient.Do(req)
+	if err == nil && resp.StatusCode == http.StatusOK {
+		var consumers []struct {
+			Queue struct {
+				Name string `json:"name"`
+			} `json:"queue"`
+		}
+		if json.NewDecoder(resp.Body).Decode(&consumers) == nil {
+			for _, c := range consumers {
+				counts[c.Queue.Name]++
+			}
+		}
+		resp.Body.Close()
+	}
+
+	out := make([]WorkerStatus, 0, len(order))
+	for _, name := range order {
+		q := workerQueues[name]
+		n := counts[q]
+		out = append(out, WorkerStatus{Name: name, Queue: q, Running: n > 0, Consumers: n})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"workers": out})
 }
 
 // CrawlRequest is the body for POST /api/crawl.

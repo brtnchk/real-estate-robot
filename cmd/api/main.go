@@ -57,10 +57,26 @@ func main() {
 		}
 	}
 
+	rabbitMgmt := os.Getenv("RABBITMQ_MGMT_URL")
+	if rabbitMgmt == "" {
+		rabbitMgmt = "http://localhost:15672"
+	}
+	rabbitUser := os.Getenv("RABBITMQ_USER")
+	if rabbitUser == "" {
+		rabbitUser = "olx"
+	}
+	rabbitPass := os.Getenv("RABBITMQ_PASSWORD")
+	if rabbitPass == "" {
+		rabbitPass = "olx"
+	}
+
 	srv := &api.Server{
-		Queries:   sqlc.New(pool),
-		Publisher: pub,
-		Log:       log,
+		Queries:    sqlc.New(pool),
+		Publisher:  pub,
+		Log:        log,
+		RabbitMgmt: rabbitMgmt,
+		RabbitUser: rabbitUser,
+		RabbitPass: rabbitPass,
 	}
 
 	httpServer := &http.Server{

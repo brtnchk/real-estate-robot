@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { SearchPanel } from './SearchPanel'
+import { WorkerStatus } from './WorkerStatus'
 
 interface Listing {
   listing_id: number
@@ -179,6 +180,7 @@ function App() {
 
   return (
     <div className="container">
+      <WorkerStatus />
       <SearchPanel onCrawlStarted={handleCrawlStarted} />
 
       {crawlMsg && (
