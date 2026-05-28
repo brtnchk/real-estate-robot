@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"time"
 
@@ -27,6 +26,7 @@ import (
 	"golang.org/x/time/rate"
 
 	"github.com/brtnchk/real-estate-robot/internal/db/sqlc"
+	"github.com/brtnchk/real-estate-robot/internal/httpc"
 	"github.com/brtnchk/real-estate-robot/internal/queue"
 )
 
@@ -66,7 +66,7 @@ type Config struct {
 // New constructs a Fetcher with sensible HTTP client defaults.
 func New(cfg Config) *Fetcher {
 	return &Fetcher{
-		HTTP:      newHTTPClient(cfg.HTTPTimeout),
+		HTTP:      httpc.New(cfg.HTTPTimeout),
 		Limiter:   rate.NewLimiter(rate.Limit(cfg.RPS), cfg.Burst),
 		UserAgent: cfg.UserAgent,
 		DB:        cfg.DB,
@@ -203,33 +203,4 @@ func mustMarshalHeaders(h http.Header) json.RawMessage {
 	}
 	b, _ := json.Marshal(keep)
 	return b
-}
-
-// newHTTPClient builds a Client with reasonable transport-level timeouts.
-// The total per-request deadline still rides on ctx in fetch().
-func newHTTPClient(perRequestTimeout time.Duration) *http.Client {
-	if perRequestTimeout <= 0 {
-		perRequestTimeout = 30 * time.Second
-	}
-	transport := &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout:   10 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 30 * time.Second,
-		IdleConnTimeout:       90 * time.Second,
-		MaxIdleConns:          20,
-		MaxIdleConnsPerHost:   10,
-	}
-	return &http.Client{
-		Transport: transport,
-		Timeout:   perRequestTimeout,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) >= 5 {
-				return errors.New("too many redirects")
-			}
-			return nil
-		},
-	}
 }

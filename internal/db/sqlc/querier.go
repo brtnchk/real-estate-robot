@@ -26,6 +26,10 @@ type Querier interface {
 	// :execrows returns the affected count so the worker can log whether
 	// a new snapshot was actually persisted (1) or deduped (0).
 	InsertListingSnapshot(ctx context.Context, arg InsertListingSnapshotParams) (int64, error)
+	// Stamp the freshness gate. Called by the enrich worker after it has
+	// finished (successfully or not — even a 404'd profile counts, otherwise
+	// we'd retry-storm a dead URL forever).
+	MarkSellerEnriched(ctx context.Context, id int64) error
 	// Insert or update by olx_listing_id. Same timestamp semantics as sellers:
 	// created_at / first_seen_at frozen on insert, last_seen_at / last_scraped_at
 	// bumped on every call, updated_at handled by the trigger.

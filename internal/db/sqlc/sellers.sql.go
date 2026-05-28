@@ -24,7 +24,7 @@ func (q *Queries) CountSellers(ctx context.Context) (int64, error) {
 }
 
 const getSellerByOlxID = `-- name: GetSellerByOlxID :one
-SELECT id, olx_user_id, display_name, profile_url, registered_at, is_business, phone_hash, avatar_url, location, raw, first_seen_at, last_seen_at, last_scraped_at, created_at, updated_at FROM sellers WHERE olx_user_id = $1
+SELECT id, olx_user_id, display_name, profile_url, registered_at, is_business, phone_hash, avatar_url, location, raw, first_seen_at, last_seen_at, last_scraped_at, created_at, updated_at, last_enriched_at FROM sellers WHERE olx_user_id = $1
 `
 
 func (q *Queries) GetSellerByOlxID(ctx context.Context, olxUserID string) (Seller, error) {
@@ -46,8 +46,21 @@ func (q *Queries) GetSellerByOlxID(ctx context.Context, olxUserID string) (Selle
 		&i.LastScrapedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LastEnrichedAt,
 	)
 	return i, err
+}
+
+const markSellerEnriched = `-- name: MarkSellerEnriched :exec
+UPDATE sellers SET last_enriched_at = NOW() WHERE id = $1
+`
+
+// Stamp the freshness gate. Called by the enrich worker after it has
+// finished (successfully or not — even a 404'd profile counts, otherwise
+// we'd retry-storm a dead URL forever).
+func (q *Queries) MarkSellerEnriched(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, markSellerEnriched, id)
+	return err
 }
 
 const upsertSeller = `-- name: UpsertSeller :one
@@ -74,7 +87,7 @@ ON CONFLICT (olx_user_id) DO UPDATE SET
     raw             = EXCLUDED.raw,
     last_seen_at    = NOW(),
     last_scraped_at = NOW()
-RETURNING id, olx_user_id, display_name, profile_url, registered_at, is_business, phone_hash, avatar_url, location, raw, first_seen_at, last_seen_at, last_scraped_at, created_at, updated_at
+RETURNING id, olx_user_id, display_name, profile_url, registered_at, is_business, phone_hash, avatar_url, location, raw, first_seen_at, last_seen_at, last_scraped_at, created_at, updated_at, last_enriched_at
 `
 
 type UpsertSellerParams struct {
@@ -121,6 +134,7 @@ func (q *Queries) UpsertSeller(ctx context.Context, arg UpsertSellerParams) (Sel
 		&i.LastScrapedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.LastEnrichedAt,
 	)
 	return i, err
 }

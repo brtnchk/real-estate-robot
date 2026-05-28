@@ -34,3 +34,9 @@ SELECT * FROM sellers WHERE olx_user_id = $1;
 
 -- name: CountSellers :one
 SELECT COUNT(*) FROM sellers;
+
+-- name: MarkSellerEnriched :exec
+-- Stamp the freshness gate. Called by the enrich worker after it has
+-- finished (successfully or not — even a 404'd profile counts, otherwise
+-- we'd retry-storm a dead URL forever).
+UPDATE sellers SET last_enriched_at = NOW() WHERE id = $1;

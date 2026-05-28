@@ -86,21 +86,22 @@ type ScrapeJob struct {
 }
 
 type Seller struct {
-	ID            int64              `json:"id"`
-	OlxUserID     string             `json:"olx_user_id"`
-	DisplayName   pgtype.Text        `json:"display_name"`
-	ProfileUrl    pgtype.Text        `json:"profile_url"`
-	RegisteredAt  pgtype.Timestamptz `json:"registered_at"`
-	IsBusiness    bool               `json:"is_business"`
-	PhoneHash     pgtype.Text        `json:"phone_hash"`
-	AvatarUrl     pgtype.Text        `json:"avatar_url"`
-	Location      pgtype.Text        `json:"location"`
-	Raw           json.RawMessage    `json:"raw"`
-	FirstSeenAt   pgtype.Timestamptz `json:"first_seen_at"`
-	LastSeenAt    pgtype.Timestamptz `json:"last_seen_at"`
-	LastScrapedAt pgtype.Timestamptz `json:"last_scraped_at"`
-	CreatedAt     pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	ID             int64              `json:"id"`
+	OlxUserID      string             `json:"olx_user_id"`
+	DisplayName    pgtype.Text        `json:"display_name"`
+	ProfileUrl     pgtype.Text        `json:"profile_url"`
+	RegisteredAt   pgtype.Timestamptz `json:"registered_at"`
+	IsBusiness     bool               `json:"is_business"`
+	PhoneHash      pgtype.Text        `json:"phone_hash"`
+	AvatarUrl      pgtype.Text        `json:"avatar_url"`
+	Location       pgtype.Text        `json:"location"`
+	Raw            json.RawMessage    `json:"raw"`
+	FirstSeenAt    pgtype.Timestamptz `json:"first_seen_at"`
+	LastSeenAt     pgtype.Timestamptz `json:"last_seen_at"`
+	LastScrapedAt  pgtype.Timestamptz `json:"last_scraped_at"`
+	CreatedAt      pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+	LastEnrichedAt pgtype.Timestamptz `json:"last_enriched_at"`
 }
 
 type SellerStat struct {

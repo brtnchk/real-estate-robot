@@ -87,7 +87,11 @@ func (w *Worker) Handle(ctx context.Context, d amqp.Delivery) error {
 		seller, err := qtx.UpsertSeller(ctx, sqlc.UpsertSellerParams{
 			OlxUserID:   res.Seller.OlxUserID,
 			DisplayName: pgtype.Text{String: res.Seller.DisplayName, Valid: true},
-			Raw:         json.RawMessage(`{"source":"parser-stub"}`),
+			// Stub profile URL — the real parser will pluck this from
+			// the listing page. Using example.com so the enrich worker
+			// has something that actually returns HTTP 200 to fetch.
+			ProfileUrl: pgtype.Text{String: "https://www.example.com/", Valid: true},
+			Raw:        json.RawMessage(`{"source":"parser-stub"}`),
 		})
 		if err != nil {
 			return fmt.Errorf("upsert seller: %w", err)
