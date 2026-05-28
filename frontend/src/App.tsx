@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { SearchPanel } from './SearchPanel'
+import { CITIES } from './cities'
 import { WorkerStatus } from './WorkerStatus'
 
 interface Listing {
@@ -53,6 +53,16 @@ const AGE_OPTIONS = [
   { value: 99999, label: 'all' },
 ]
 
+// Maps current filter values to the OLX category slug for crawl requests.
+function categorySlugForCrawl(propertyType: string, dealType: string): string {
+  if (propertyType.includes('будинк') && dealType === 'sale') return 'prodazha-domov'
+  if (propertyType.includes('квартир') && dealType === 'rent_long') return 'arenda-kvartir'
+  if (propertyType.includes('квартир') && dealType === 'rent_short') return 'arenda-kvartir'
+  if (propertyType.includes('земел')) return 'zemlya'
+  if (propertyType.includes('примі')) return 'prodazha-pomescheniy'
+  return 'prodazha-kvartir'
+}
+
 function scoreClass(s: number): string {
   if (s >= 0.8) return 'score-high'
   if (s >= 0.5) return 'score-mid'
@@ -95,42 +105,6 @@ function App() {
     fetch('/api/cities').then((r) => r.json()).then(setCities).catch(() => {})
   }
 
-  function handleCrawlStarted(cityName: string) {
-    setCrawlingCity(cityName)
-    setCrawlMsg(`Запускаємо пошук для "${cityName}"… зазвичай займає 60–90 секунд.`)
-
-    // Stop any previous poll
-    if (pollRef.current) clearInterval(pollRef.current)
-
-    let attempts = 0
-    const MAX = 24 // 24 × 5s = 2 min max
-
-    pollRef.current = setInterval(() => {
-      attempts++
-      refreshDimensions()
-
-      // Check if the city appeared in /api/cities
-      fetch('/api/cities')
-        .then((r) => r.json())
-        .then((data: CityCount[]) => {
-          const found = data.some((c) => c.city === cityName)
-          if (found || attempts >= MAX) {
-            clearInterval(pollRef.current!)
-            pollRef.current = null
-            setCrawlingCity(null)
-            if (found) {
-              setCrawlMsg(`"${cityName}" додано! Виберіть місто у фільтрі нижче.`)
-              setCity(cityName)        // auto-select the new city in the filter
-            } else {
-              setCrawlMsg(
-                `Час очікування вийшов. Переконайтеся, що воркери запущені (make discovery, make fetcher, make parser), потім спробуйте знову.`
-              )
-            }
-          }
-        })
-        .catch(() => {})
-    }, 5000)
-  }
 
   // Listings re-fetch whenever any filter changes.
   useEffect(() => {
@@ -181,7 +155,6 @@ function App() {
   return (
     <div className="container">
       <WorkerStatus />
-      <SearchPanel onCrawlStarted={handleCrawlStarted} />
 
       {crawlMsg && (
         <div className={`crawl-notice ${crawlingCity ? 'crawl-notice--running' : 'crawl-notice--done'}`}>
@@ -208,14 +181,85 @@ function App() {
 
       <div className="filters">
         <label>
-          <span>City</span>
-          <select value={city} onChange={(e) => setCity(e.target.value)}>
-            <option value="">all cities</option>
-            {cities.map((c) => (
-              <option key={c.city} value={c.city}>
-                {c.city} ({c.count})
-              </option>
-            ))}
+          <span>Місто</span>
+          <select
+            value={city}
+            onChange={(e) => {
+              const val = e.target.value
+              if (val.startsWith('__crawl__:')) {
+                // city not in DB yet → trigger crawl
+                const [, slug, name] = val.split(':')
+                setCrawlMsg(`Шукаємо "${name}" на OLX… зазвичай 60–90 сек.`)
+                setCrawlingCity(name)
+                fetch('/api/crawl', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    city_slug: slug,
+                    category_slug: categorySlugForCrawl(propertyType, dealType),
+                  }),
+                }).catch(() => {
+                  setCrawlingCity(null)
+                  setCrawlMsg('Помилка запуску. Переконайтесь, що воркери запущені.')
+                })
+                if (pollRef.current) clearInterval(pollRef.current)
+                let attempts = 0
+                pollRef.current = setInterval(() => {
+                  attempts++
+                  refreshDimensions()
+                  fetch('/api/cities')
+                    .then((r) => r.json())
+                    .then((data: CityCount[]) => {
+                      if (data.some((c) => c.city === name) || attempts >= 24) {
+                        clearInterval(pollRef.current!); pollRef.current = null
+                        setCrawlingCity(null)
+                        if (data.some((c) => c.city === name)) {
+                          setCrawlMsg('')
+                          setCity(name)
+                        } else {
+                          setCrawlMsg('Час вийшов. Переконайтесь, що воркери запущені.')
+                        }
+                      }
+                    })
+                    .catch(() => {})
+                }, 5000)
+              } else {
+                setCity(val)
+              }
+            }}
+          >
+            <option value="">всі міста</option>
+            {/* already indexed — shown with counts */}
+            {(() => {
+              const indexedNames = new Set(cities.map((c) => c.city))
+              const indexedCatalog = CITIES.filter((c) => indexedNames.has(c.name))
+              const unknownIndexed = cities.filter((c) => !CITIES.some((cat) => cat.name === c.city))
+              const notIndexed = CITIES.filter((c) => !indexedNames.has(c.name))
+              return (
+                <>
+                  {(indexedCatalog.length > 0 || unknownIndexed.length > 0) && (
+                    <optgroup label="У базі даних">
+                      {indexedCatalog.map((c) => {
+                        const n = cities.find((d) => d.city === c.name)?.count ?? 0
+                        return <option key={c.slug} value={c.name}>{c.name} ({n})</option>
+                      })}
+                      {unknownIndexed.map((c) => (
+                        <option key={c.city} value={c.city}>{c.city} ({c.count})</option>
+                      ))}
+                    </optgroup>
+                  )}
+                  {notIndexed.length > 0 && (
+                    <optgroup label="Пошукати на OLX →">
+                      {notIndexed.map((c) => (
+                        <option key={c.slug} value={`__crawl__:${c.slug}:${c.name}`}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </optgroup>
+                  )}
+                </>
+              )
+            })()}
           </select>
         </label>
 
