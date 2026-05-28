@@ -31,6 +31,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/listings", s.listings)
 	mux.HandleFunc("GET /api/stats", s.stats)
 	mux.HandleFunc("GET /api/categories", s.categories)
+	mux.HandleFunc("GET /api/cities", s.cities)
 	return logRequest(s.Log, cors(mux))
 }
 
@@ -88,6 +89,7 @@ func (s *Server) listings(w http.ResponseWriter, r *http.Request) {
 	limit := intParam(q, "limit", 200)
 	propertyType := strings.TrimSpace(q.Get("property_type"))
 	dealType := strings.TrimSpace(q.Get("deal_type"))
+	city := strings.TrimSpace(q.Get("city"))
 
 	if limit > 1000 {
 		limit = 1000 // hard cap so a runaway frontend can't OOM us
@@ -98,6 +100,7 @@ func (s *Server) listings(w http.ResponseWriter, r *http.Request) {
 		MinScore:     numericFromFloat(minScore),
 		PropertyType: propertyType,
 		DealType:     dealType,
+		City:         city,
 		LimitN:       int32(limit),
 	})
 	if err != nil {
@@ -109,6 +112,30 @@ func (s *Server) listings(w http.ResponseWriter, r *http.Request) {
 	out := make([]Listing, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, toAPIListing(r))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+// CityCount is one row of the cities endpoint — same shape as Category
+// but only carries the city name and its listing count.
+type CityCount struct {
+	City  string `json:"city"`
+	Count int32  `json:"count"`
+}
+
+func (s *Server) cities(w http.ResponseWriter, r *http.Request) {
+	rows, err := s.Queries.GetDistinctCities(r.Context())
+	if err != nil {
+		s.Log.Error("get cities", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "query failed"})
+		return
+	}
+	out := make([]CityCount, 0, len(rows))
+	for _, r := range rows {
+		if !r.City.Valid {
+			continue
+		}
+		out = append(out, CityCount{City: r.City.String, Count: r.N})
 	}
 	writeJSON(w, http.StatusOK, out)
 }

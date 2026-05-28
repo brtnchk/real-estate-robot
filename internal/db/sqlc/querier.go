@@ -14,6 +14,10 @@ type Querier interface {
 	// Distinct (property_type, deal_type) pairs present in the dataset, used
 	// to populate the frontend dropdowns dynamically (no hardcoded list).
 	GetDistinctCategories(ctx context.Context) ([]GetDistinctCategoriesRow, error)
+	// Cities present in the dataset with their listing counts, drives the
+	// frontend's city dropdown. City names are whatever OLX wrote
+	// (Ukrainian: "Київ", "Львів", "Одеса", etc.) — we don't normalize.
+	GetDistinctCities(ctx context.Context) ([]GetDistinctCitiesRow, error)
 	GetFetchByID(ctx context.Context, id int64) (ListingHtmlFetch, error)
 	GetLatestFetchByURL(ctx context.Context, url string) (ListingHtmlFetch, error)
 	GetListingByOlxID(ctx context.Context, olxListingID string) (Listing, error)

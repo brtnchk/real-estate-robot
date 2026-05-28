@@ -47,6 +47,42 @@ func (q *Queries) GetDistinctCategories(ctx context.Context) ([]GetDistinctCateg
 	return items, nil
 }
 
+const getDistinctCities = `-- name: GetDistinctCities :many
+SELECT city, COUNT(*)::int AS n
+  FROM listings_with_classification
+ WHERE city IS NOT NULL AND city <> ''
+ GROUP BY city
+ ORDER BY n DESC, city
+`
+
+type GetDistinctCitiesRow struct {
+	City pgtype.Text `json:"city"`
+	N    int32       `json:"n"`
+}
+
+// Cities present in the dataset with their listing counts, drives the
+// frontend's city dropdown. City names are whatever OLX wrote
+// (Ukrainian: "Київ", "Львів", "Одеса", etc.) — we don't normalize.
+func (q *Queries) GetDistinctCities(ctx context.Context) ([]GetDistinctCitiesRow, error) {
+	rows, err := q.db.Query(ctx, getDistinctCities)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetDistinctCitiesRow
+	for rows.Next() {
+		var i GetDistinctCitiesRow
+		if err := rows.Scan(&i.City, &i.N); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getSellerClassification = `-- name: GetSellerClassification :one
 SELECT seller_id, olx_user_id, display_name, is_business, registered_at, listings_active, districts_count, cities_count, score_personhood, score_listings_count, score_geography, score_account_age, real_seller_score FROM seller_classifications
  WHERE olx_user_id = $1
@@ -117,8 +153,9 @@ SELECT listing_id, olx_listing_id, url, title, price, currency, city, district, 
    AND real_seller_score >= $2::numeric
    AND ($3::text = '' OR property_type = $3::text)
    AND ($4::text     = '' OR deal_type     = $4::text)
+   AND ($5::text          = '' OR city          = $5::text)
  ORDER BY real_seller_score DESC, posted_at DESC
- LIMIT $5::int
+ LIMIT $6::int
 `
 
 type ListListingsForAPIParams struct {
@@ -126,6 +163,7 @@ type ListListingsForAPIParams struct {
 	MinScore     pgtype.Numeric `json:"min_score"`
 	PropertyType string         `json:"property_type"`
 	DealType     string         `json:"deal_type"`
+	City         string         `json:"city"`
 	LimitN       int32          `json:"limit_n"`
 }
 
@@ -145,6 +183,7 @@ func (q *Queries) ListListingsForAPI(ctx context.Context, arg ListListingsForAPI
 		arg.MinScore,
 		arg.PropertyType,
 		arg.DealType,
+		arg.City,
 		arg.LimitN,
 	)
 	if err != nil {

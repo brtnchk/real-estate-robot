@@ -31,6 +31,11 @@ interface Category {
   count: number
 }
 
+interface CityCount {
+  city: string
+  count: number
+}
+
 const DEAL_TYPE_LABELS: Record<string, string> = {
   sale: 'продаж',
   rent_long: 'довгострокова оренда',
@@ -57,6 +62,7 @@ function App() {
   const [listings, setListings] = useState<Listing[]>([])
   const [stats, setStats] = useState<Stats | null>(null)
   const [categories, setCategories] = useState<Category[]>([])
+  const [cities, setCities] = useState<CityCount[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -65,12 +71,14 @@ function App() {
   const [limit, setLimit] = useState(100)
   const [propertyType, setPropertyType] = useState('')
   const [dealType, setDealType] = useState('')
+  const [city, setCity] = useState('')
 
-  // Stats + categories fetched once on mount — they describe the dataset
-  // scope, not the currently-filtered view.
+  // Stats + categories + cities fetched once on mount — they describe the
+  // dataset scope, not the currently-filtered view.
   useEffect(() => {
     fetch('/api/stats').then((r) => r.json()).then(setStats).catch(() => {})
     fetch('/api/categories').then((r) => r.json()).then(setCategories).catch(() => {})
+    fetch('/api/cities').then((r) => r.json()).then(setCities).catch(() => {})
   }, [])
 
   // Listings re-fetch whenever any filter changes.
@@ -84,6 +92,7 @@ function App() {
     })
     if (propertyType) params.set('property_type', propertyType)
     if (dealType) params.set('deal_type', dealType)
+    if (city) params.set('city', city)
     fetch(`/api/listings?${params}`)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
@@ -97,7 +106,7 @@ function App() {
         setError(String(e))
         setLoading(false)
       })
-  }, [maxAgeDays, minScore, limit, propertyType, dealType])
+  }, [maxAgeDays, minScore, limit, propertyType, dealType, city])
 
   // Distinct property_types in current dataset (with total counts).
   const propertyTypes = Array.from(
@@ -137,6 +146,18 @@ function App() {
       </header>
 
       <div className="filters">
+        <label>
+          <span>City</span>
+          <select value={city} onChange={(e) => setCity(e.target.value)}>
+            <option value="">all cities</option>
+            {cities.map((c) => (
+              <option key={c.city} value={c.city}>
+                {c.city} ({c.count})
+              </option>
+            ))}
+          </select>
+        </label>
+
         <label>
           <span>Property type</span>
           <select

@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -38,14 +39,18 @@ type DiscoveryTask struct {
 func main() {
 	interval := flag.Duration("interval", 5*time.Minute, "tick interval between discovery passes")
 	searches := flag.String("searches", "",
-		"comma-separated list of OLX search URLs to kick off discovery for")
+		"comma-separated full OLX search URLs (use this for arbitrary URLs)")
+	cities := flag.String("cities", "",
+		"comma-separated OLX city slugs (kiev, lvov, odessa, kharkov, dnepr, ...)")
+	categories := flag.String("categories", "",
+		"comma-separated OLX category slugs (prodazha-kvartir, prodazha-domov, arenda-kvartir, zemlya, ...)")
 	flag.Parse()
 
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-	urls := parseSearchURLs(*searches)
+	urls := append(parseCommaList(*searches), buildTemplatedURLs(*categories, *cities)...)
 	if len(urls) == 0 {
-		log.Error("--searches is required (comma-separated)")
+		log.Error("at least one of --searches OR (--cities AND --categories) is required")
 		os.Exit(2)
 	}
 
@@ -101,9 +106,9 @@ func tick(ctx context.Context, log *slog.Logger, pub *queue.Publisher, urls []st
 	}
 }
 
-// parseSearchURLs splits the comma-separated flag into trimmed, non-empty
-// URLs. Trailing/leading whitespace is tolerated so config files can wrap.
-func parseSearchURLs(s string) []string {
+// parseCommaList splits the comma-separated flag into trimmed, non-empty
+// items. Trailing/leading whitespace is tolerated so config files can wrap.
+func parseCommaList(s string) []string {
 	if s == "" {
 		return nil
 	}
@@ -112,6 +117,31 @@ func parseSearchURLs(s string) []string {
 	for _, p := range parts {
 		if p = strings.TrimSpace(p); p != "" {
 			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// buildTemplatedURLs builds the Cartesian product of categories × cities
+// into OLX search URLs. Empty input on either side -> empty output.
+//
+//	categories=prodazha-kvartir,prodazha-domov
+//	cities=kiev,lvov
+//	-> 4 URLs:
+//	     /uk/nedvizhimost/prodazha-kvartir/kiev/
+//	     /uk/nedvizhimost/prodazha-kvartir/lvov/
+//	     /uk/nedvizhimost/prodazha-domov/kiev/
+//	     /uk/nedvizhimost/prodazha-domov/lvov/
+func buildTemplatedURLs(categories, cities string) []string {
+	cats := parseCommaList(categories)
+	towns := parseCommaList(cities)
+	if len(cats) == 0 || len(towns) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(cats)*len(towns))
+	for _, c := range cats {
+		for _, t := range towns {
+			out = append(out, fmt.Sprintf("https://www.olx.ua/uk/nedvizhimost/%s/%s/", c, t))
 		}
 	}
 	return out

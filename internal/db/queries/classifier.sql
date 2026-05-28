@@ -34,8 +34,19 @@ SELECT * FROM listings_with_classification
    AND real_seller_score >= sqlc.arg('min_score')::numeric
    AND (sqlc.arg('property_type')::text = '' OR property_type = sqlc.arg('property_type')::text)
    AND (sqlc.arg('deal_type')::text     = '' OR deal_type     = sqlc.arg('deal_type')::text)
+   AND (sqlc.arg('city')::text          = '' OR city          = sqlc.arg('city')::text)
  ORDER BY real_seller_score DESC, posted_at DESC
  LIMIT sqlc.arg('limit_n')::int;
+
+-- name: GetDistinctCities :many
+-- Cities present in the dataset with their listing counts, drives the
+-- frontend's city dropdown. City names are whatever OLX wrote
+-- (Ukrainian: "Київ", "Львів", "Одеса", etc.) — we don't normalize.
+SELECT city, COUNT(*)::int AS n
+  FROM listings_with_classification
+ WHERE city IS NOT NULL AND city <> ''
+ GROUP BY city
+ ORDER BY n DESC, city;
 
 -- name: GetDistinctCategories :many
 -- Distinct (property_type, deal_type) pairs present in the dataset, used
