@@ -73,6 +73,27 @@ type ListingSnapshot struct {
 	CapturedAt pgtype.Timestamptz `json:"captured_at"`
 }
 
+type ListingsWithClassification struct {
+	ListingID            int64              `json:"listing_id"`
+	OlxListingID         string             `json:"olx_listing_id"`
+	Url                  string             `json:"url"`
+	Title                pgtype.Text        `json:"title"`
+	Price                pgtype.Numeric     `json:"price"`
+	Currency             pgtype.Text        `json:"currency"`
+	City                 pgtype.Text        `json:"city"`
+	District             pgtype.Text        `json:"district"`
+	PostedAt             pgtype.Timestamptz `json:"posted_at"`
+	ListingLastSeen      pgtype.Timestamptz `json:"listing_last_seen"`
+	SellerID             int64              `json:"seller_id"`
+	OlxUserID            string             `json:"olx_user_id"`
+	SellerName           pgtype.Text        `json:"seller_name"`
+	IsBusiness           bool               `json:"is_business"`
+	SellerRegisteredAt   pgtype.Timestamptz `json:"seller_registered_at"`
+	SellerListingsActive int64              `json:"seller_listings_active"`
+	SellerDistrictsCount int64              `json:"seller_districts_count"`
+	RealSellerScore      pgtype.Numeric     `json:"real_seller_score"`
+}
+
 type ScrapeJob struct {
 	ID         int64              `json:"id"`
 	Kind       string             `json:"kind"`

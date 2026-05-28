@@ -17,6 +17,9 @@ type Querier interface {
 	GetSellerByOlxID(ctx context.Context, olxUserID string) (Seller, error)
 	// Single seller's score and component breakdown.
 	GetSellerClassification(ctx context.Context, olxUserID string) (SellerClassification, error)
+	// Two rows: one for is_business=false, one for true. Used by the API's
+	// stats endpoint to render the private/business split.
+	GetSellerCounts(ctx context.Context) ([]GetSellerCountsRow, error)
 	// Append-only: every fetch attempt that lands here gets a new row.
 	// The fetcher writes successes (status 2xx, body present) and permanent
 	// failures (4xx, body NULL). Transient failures are NOT stored here —
@@ -26,6 +29,10 @@ type Querier interface {
 	// The unique constraint on (listing_id, raw_hash) means re-parsing an
 	// unchanged listing is a no-op; only real changes create new rows.
 	InsertListingSnapshot(ctx context.Context, arg InsertListingSnapshotParams) (int64, error)
+	// The HTTP API's main query: filtered listings with their seller score.
+	// max_age_days = 99999 effectively disables the recency filter (NOW() -
+	// 273 years catches everything in practice).
+	ListListingsForAPI(ctx context.Context, arg ListListingsForAPIParams) ([]ListingsWithClassification, error)
 	// Stamp the freshness gate. Called by the enrich worker after it has
 	// finished (successfully or not — even a 404'd profile counts, otherwise
 	// we'd retry-storm a dead URL forever).

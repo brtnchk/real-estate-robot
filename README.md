@@ -114,6 +114,7 @@ after a configurable retry budget.
 
 ## Tech stack
 
+Backend:
 - **Go 1.22+** (developed on 1.26.1), one binary per worker in `cmd/`
 - **PostgreSQL 16** — relational core + `JSONB` for raw OLX payloads
 - **RabbitMQ 3.13** — work queues with management plugin
@@ -124,6 +125,11 @@ after a configurable retry budget.
 - **goquery** — jQuery-like HTML traversal
 - **golang.org/x/time/rate** — token-bucket rate limiting
 
+Frontend:
+- **React 18** + **TypeScript** + **Vite 6**
+- HTTP/JSON API in `cmd/api/` (`net/http` stdlib only, Go 1.22 method routing)
+- Same-origin during dev via Vite proxy; permissive CORS on the API as a backup
+
 ## Project structure
 
 ```
@@ -133,6 +139,9 @@ after a configurable retry budget.
 │   ├── fetcher/               worker: HTTP → listing_html_fetches
 │   ├── parser/                worker: HTML → DB (transactional)
 │   ├── enricher/              worker: seller profile → fan-out URLs
+│   ├── scheduler/             ticks every --interval, kicks discovery
+│   ├── classify/              CLI: print ranked sellers
+│   ├── api/                   HTTP/JSON API for the React frontend
 │   ├── topology/              one-off: declare exchanges + queues
 │   ├── publish/               sandbox: hand-publish a message
 │   ├── consume/               sandbox: hand-consume a queue
@@ -140,6 +149,7 @@ after a configurable retry budget.
 ├── internal/
 │   ├── queue/                 topology + Publisher (confirms, returns)
 │   │                          + Consumer (prefetch, manual ack, retry/dead)
+│   ├── api/                   HTTP handlers, JSON marshalling, CORS
 │   ├── db/
 │   │   ├── queries/           hand-written SQL (input to sqlc)
 │   │   └── sqlc/              generated typed Go (committed)
@@ -148,6 +158,7 @@ after a configurable retry budget.
 │   ├── fetcher/               fetcher worker package
 │   ├── parser/                parser package + worker
 │   └── enrich/                seller-enrich worker package
+├── frontend/                  React + TypeScript + Vite (src/App.tsx)
 ├── migrations/                goose-format SQL migrations
 ├── docker-compose.yml         Postgres + RabbitMQ
 ├── sqlc.yaml                  sqlc config + JSONB overrides
@@ -207,6 +218,20 @@ make psql                     # SQL shell
 make sqlc                     # = go tool sqlc generate
 ```
 
+### Run the frontend (React + Vite + Go API)
+
+```bash
+# In one terminal: the HTTP/JSON API
+make api                      # http://localhost:8080/api/...
+
+# In another terminal: the React dev server
+make frontend                 # http://localhost:5173
+```
+
+Open `http://localhost:5173` — interactive UI with filter dropdowns
+(posted within N days, min score slider, limit), score-colored rows,
+and clickable titles that open on OLX.
+
 ## Tests
 
 ```bash
@@ -252,6 +277,9 @@ applied as new migrations, never by editing old ones.
 - [x] Real OLX HTML parser via `__PRERENDERED_STATE__` JSON extraction
 - [x] Classification: heuristic "real seller" score (`seller_classifications`
       view) + `cmd/classify` CLI with per-component breakdown
+- [x] HTTP/JSON API + React frontend (filterable table of ranked listings,
+      clickable URLs, live updating)
+- [x] Scheduler with fetcher dedup for continuous (re-)discovery
 - [ ] Relative-URL resolution in discovery (OLX search pages use `/d/...`,
       not absolute URLs)
 - [ ] testcontainers-go integration tests for worker `Handle` methods

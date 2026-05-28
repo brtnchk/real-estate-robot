@@ -7,6 +7,8 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const getSellerClassification = `-- name: GetSellerClassification :one
@@ -34,6 +36,99 @@ func (q *Queries) GetSellerClassification(ctx context.Context, olxUserID string)
 		&i.RealSellerScore,
 	)
 	return i, err
+}
+
+const getSellerCounts = `-- name: GetSellerCounts :many
+SELECT
+    is_business,
+    COUNT(*)::int                 AS sellers,
+    AVG(real_seller_score)::float AS avg_score
+FROM seller_classifications
+GROUP BY is_business
+`
+
+type GetSellerCountsRow struct {
+	IsBusiness bool    `json:"is_business"`
+	Sellers    int32   `json:"sellers"`
+	AvgScore   float64 `json:"avg_score"`
+}
+
+// Two rows: one for is_business=false, one for true. Used by the API's
+// stats endpoint to render the private/business split.
+func (q *Queries) GetSellerCounts(ctx context.Context) ([]GetSellerCountsRow, error) {
+	rows, err := q.db.Query(ctx, getSellerCounts)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetSellerCountsRow
+	for rows.Next() {
+		var i GetSellerCountsRow
+		if err := rows.Scan(&i.IsBusiness, &i.Sellers, &i.AvgScore); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listListingsForAPI = `-- name: ListListingsForAPI :many
+SELECT listing_id, olx_listing_id, url, title, price, currency, city, district, posted_at, listing_last_seen, seller_id, olx_user_id, seller_name, is_business, seller_registered_at, seller_listings_active, seller_districts_count, real_seller_score FROM listings_with_classification
+ WHERE posted_at >= NOW() - (interval '1 day' * $1::int)
+   AND real_seller_score >= $2::numeric
+ ORDER BY real_seller_score DESC, posted_at DESC
+ LIMIT $3::int
+`
+
+type ListListingsForAPIParams struct {
+	MaxAgeDays int32          `json:"max_age_days"`
+	MinScore   pgtype.Numeric `json:"min_score"`
+	LimitN     int32          `json:"limit_n"`
+}
+
+// The HTTP API's main query: filtered listings with their seller score.
+// max_age_days = 99999 effectively disables the recency filter (NOW() -
+// 273 years catches everything in practice).
+func (q *Queries) ListListingsForAPI(ctx context.Context, arg ListListingsForAPIParams) ([]ListingsWithClassification, error) {
+	rows, err := q.db.Query(ctx, listListingsForAPI, arg.MaxAgeDays, arg.MinScore, arg.LimitN)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListingsWithClassification
+	for rows.Next() {
+		var i ListingsWithClassification
+		if err := rows.Scan(
+			&i.ListingID,
+			&i.OlxListingID,
+			&i.Url,
+			&i.Title,
+			&i.Price,
+			&i.Currency,
+			&i.City,
+			&i.District,
+			&i.PostedAt,
+			&i.ListingLastSeen,
+			&i.SellerID,
+			&i.OlxUserID,
+			&i.SellerName,
+			&i.IsBusiness,
+			&i.SellerRegisteredAt,
+			&i.SellerListingsActive,
+			&i.SellerDistrictsCount,
+			&i.RealSellerScore,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const refreshSellerStats = `-- name: RefreshSellerStats :exec
