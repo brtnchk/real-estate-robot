@@ -1,4 +1,4 @@
-.PHONY: up down logs ps psql rabbit-ui migrate migrate-down migrate-status topology build publish consume sqlc db-demo fetcher parser enricher
+.PHONY: up down logs ps psql rabbit-ui migrate migrate-down migrate-status topology build publish consume sqlc db-demo fetcher parser enricher test test-v test-cover
 
 # --- infra ------------------------------------------------------------------
 
@@ -79,3 +79,17 @@ parser:
 # Run the seller-enrich worker. Ctrl+C to stop.
 enricher:
 	DATABASE_URL="$(DB_URL)" AMQP_URL="$(AMQP_URL)" go run ./cmd/enricher
+
+# --- tests ------------------------------------------------------------------
+
+test:
+	go test ./...
+
+test-v:
+	go test -v ./...
+
+# Coverage report. Open the HTML in your browser to drill into uncovered lines.
+test-cover:
+	go test -coverprofile=/tmp/coverage.out ./...
+	go tool cover -func=/tmp/coverage.out | tail -5
+	@echo "open /tmp/coverage.out  →  go tool cover -html=/tmp/coverage.out"
