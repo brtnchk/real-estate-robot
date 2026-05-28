@@ -53,15 +53,6 @@ const AGE_OPTIONS = [
   { value: 99999, label: 'all' },
 ]
 
-// Maps current filter values to the OLX category slug for crawl requests.
-function categorySlugForCrawl(propertyType: string, dealType: string): string {
-  if (propertyType.includes('будинк') && dealType === 'sale') return 'prodazha-domov'
-  if (propertyType.includes('квартир') && dealType === 'rent_long') return 'arenda-kvartir'
-  if (propertyType.includes('квартир') && dealType === 'rent_short') return 'arenda-kvartir'
-  if (propertyType.includes('земел')) return 'zemlya'
-  if (propertyType.includes('примі')) return 'prodazha-pomescheniy'
-  return 'prodazha-kvartir'
-}
 
 function scoreClass(s: number): string {
   if (s >= 0.8) return 'score-high'
