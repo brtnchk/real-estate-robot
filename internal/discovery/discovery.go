@@ -177,28 +177,58 @@ func (w *Worker) fetchListingURLs(ctx context.Context, pageURL string) ([]string
 		return nil, fmt.Errorf("parse html: %w", err)
 	}
 
+	base, err := url.Parse(pageURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse page url: %w", err)
+	}
+
 	seen := make(map[string]struct{})
 	var urls []string
 	doc.Find("a[href]").Each(func(_ int, s *goquery.Selection) {
 		href, ok := s.Attr("href")
-		if !ok || !isListingURL(href) {
+		if !ok {
 			return
 		}
-		if _, dup := seen[href]; dup {
+		abs := resolveAndClean(base, href)
+		if abs == "" || !isListingURL(abs) {
 			return
 		}
-		seen[href] = struct{}{}
-		urls = append(urls, href)
+		if _, dup := seen[abs]; dup {
+			return
+		}
+		seen[abs] = struct{}{}
+		urls = append(urls, abs)
 	})
 	return urls, nil
 }
 
-// isListingURL matches absolute OLX listing links. Mirrors the predicate in
-// internal/enrich — when we get to a real OLX parser, both packages should
-// share this through a tiny olxurl package.
+// isListingURL matches absolute OLX listing links. URLs are normalized to
+// the absolute form by resolveAndClean before this is called, so we never
+// see relative ones here.
 func isListingURL(href string) bool {
 	return strings.HasPrefix(href, "https://www.olx.ua/d/") ||
 		strings.HasPrefix(href, "https://www.olx.ua/uk/d/")
+}
+
+// resolveAndClean turns a possibly-relative href into an absolute, canonical
+// URL: relative paths are resolved against base, query string is stripped
+// (OLX appends ?search_reason=... which would create duplicate fetch rows
+// for the same listing), and fragments are dropped. Returns "" on parse
+// failure so the caller can skip silently.
+func resolveAndClean(base *url.URL, href string) string {
+	if href == "" {
+		return ""
+	}
+	u, err := url.Parse(href)
+	if err != nil {
+		return ""
+	}
+	if !u.IsAbs() {
+		u = base.ResolveReference(u)
+	}
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
 }
 
 // buildSearchPageURL produces the per-page URL of a search. OLX paginates
