@@ -1,0 +1,24 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "internal/db/queries"
+    schema: "migrations"
+    gen:
+      go:
+        package: "sqlc"
+        out: "internal/db/sqlc"
+        sql_package: "pgx/v5"
+        emit_json_tags: true
+        emit_prepared_queries: false
+        emit_interface: true
+        # JSONB columns generate as []byte by default with pgx/v5.
+        # Override to json.RawMessage so callers can pass json.Marshal output directly.
+        overrides:
+          - column: "sellers.raw"
+            go_type: "encoding/json.RawMessage"
+          - column: "listings.raw"
+            go_type: "encoding/json.RawMessage"
+          - column: "listings.attributes"
+            go_type: "encoding/json.RawMessage"
+          - column: "listing_html_fetches.headers"
+            go_type: "encoding/json.RawMessage"
