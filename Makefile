@@ -1,4 +1,4 @@
-.PHONY: up down logs ps psql rabbit-ui migrate migrate-down migrate-status topology build publish consume sqlc db-demo fetcher parser enricher discovery classify test test-v test-cover
+.PHONY: up down logs ps psql rabbit-ui migrate migrate-down migrate-status topology build publish consume sqlc db-demo fetcher parser enricher discovery classify refresh-stats grafana test test-v test-cover
 
 # --- infra ------------------------------------------------------------------
 
@@ -90,6 +90,16 @@ discovery:
 #   make classify args='--refresh --limit 10 --min-listings 2'
 classify:
 	DATABASE_URL="$(DB_URL)" go run ./cmd/classify $(args)
+
+# Refresh the seller_stats materialized view. Run after a fresh batch of
+# parsed listings so the Grafana dashboard / classifier see new data.
+refresh-stats:
+	docker compose exec -T postgres psql -U olx -d olx \
+	    -c "REFRESH MATERIALIZED VIEW CONCURRENTLY seller_stats;"
+
+# Print Grafana access info. The container itself starts via `make up`.
+grafana:
+	@echo "  Grafana:  http://localhost:$${GRAFANA_PORT:-3000}/d/olx-real-sellers/  (olx / olx)"
 
 # --- tests ------------------------------------------------------------------
 

@@ -1,0 +1,144 @@
+{
+  "uid": "olx-real-sellers",
+  "title": "OLX — Real Private Sellers",
+  "tags": ["olx"],
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": {"from": "now-30d", "to": "now"},
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Listings indexed",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+      "datasource": {"type": "postgres", "uid": "olx-postgres"},
+      "targets": [{
+        "refId": "A",
+        "rawSql": "SELECT COUNT(*) FROM listings_with_classification",
+        "format": "table"
+      }],
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "blue"}]}}
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "colorMode": "value", "graphMode": "none"}
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Sellers (real private  /  business)",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+      "datasource": {"type": "postgres", "uid": "olx-postgres"},
+      "targets": [{
+        "refId": "A",
+        "rawSql": "SELECT 'private' AS label, COUNT(*) AS value FROM seller_classifications WHERE NOT is_business UNION ALL SELECT 'business', COUNT(*) FROM seller_classifications WHERE is_business",
+        "format": "table"
+      }],
+      "fieldConfig": {
+        "defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green"}, {"color": "orange", "value": 10}]}}
+      },
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "/^value$/", "values": false}, "colorMode": "value", "graphMode": "none", "textMode": "value_and_name"}
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Avg score (private)",
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 0},
+      "datasource": {"type": "postgres", "uid": "olx-postgres"},
+      "targets": [{
+        "refId": "A",
+        "rawSql": "SELECT AVG(real_seller_score)::float AS v FROM seller_classifications WHERE NOT is_business",
+        "format": "table"
+      }],
+      "fieldConfig": {"defaults": {"decimals": 2, "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red"}, {"color": "orange", "value": 0.4}, {"color": "green", "value": 0.7}]}}},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "colorMode": "background", "graphMode": "none"}
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Avg score (business)",
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 0},
+      "datasource": {"type": "postgres", "uid": "olx-postgres"},
+      "targets": [{
+        "refId": "A",
+        "rawSql": "SELECT AVG(real_seller_score)::float AS v FROM seller_classifications WHERE is_business",
+        "format": "table"
+      }],
+      "fieldConfig": {"defaults": {"decimals": 2, "color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "red"}, {"color": "orange", "value": 0.4}, {"color": "green", "value": 0.7}]}}},
+      "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "colorMode": "background", "graphMode": "none"}
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Listings ranked by 'real private seller' score — click the title to open on OLX",
+      "gridPos": {"h": 20, "w": 24, "x": 0, "y": 4},
+      "datasource": {"type": "postgres", "uid": "olx-postgres"},
+      "targets": [{
+        "refId": "A",
+        "rawSql": "SELECT real_seller_score AS score, title, price, currency, district, city, seller_name, is_business, seller_listings_active AS seller_listings, seller_districts_count AS seller_districts, posted_at, url FROM listings_with_classification ORDER BY real_seller_score DESC, posted_at DESC NULLS LAST LIMIT 200",
+        "format": "table"
+      }],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"align": "left", "displayMode": "auto", "filterable": true, "inspect": false}
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "score"},
+            "properties": [
+              {"id": "custom.cellOptions", "value": {"type": "color-background", "mode": "gradient"}},
+              {"id": "decimals", "value": 2},
+              {"id": "thresholds", "value": {"mode": "absolute", "steps": [
+                {"color": "red", "value": null},
+                {"color": "orange", "value": 0.3},
+                {"color": "yellow", "value": 0.5},
+                {"color": "green", "value": 0.8}
+              ]}},
+              {"id": "custom.width", "value": 80}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "title"},
+            "properties": [
+              {"id": "links", "value": [{
+                "title": "Open on OLX",
+                "url": "${__data.fields.url}",
+                "targetBlank": true
+              }]},
+              {"id": "custom.width", "value": 320}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "url"},
+            "properties": [{"id": "custom.hidden", "value": true}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "is_business"},
+            "properties": [
+              {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+              {"id": "mappings", "value": [
+                {"type": "value", "options": {"true":  {"text": "BIZ", "color": "orange"}}},
+                {"type": "value", "options": {"false": {"text": "private", "color": "green"}}}
+              ]},
+              {"id": "custom.width", "value": 90}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "price"},
+            "properties": [{"id": "custom.width", "value": 100}, {"id": "decimals", "value": 0}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "posted_at"},
+            "properties": [{"id": "unit", "value": "dateTimeAsLocal"}, {"id": "custom.width", "value": 140}]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "footer": {"show": false},
+        "sortBy": [{"displayName": "score", "desc": true}]
+      }
+    }
+  ]
+}

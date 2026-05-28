@@ -1,0 +1,15 @@
+# Tells Grafana to scan /var/lib/grafana/dashboards for *.json dashboards
+# on startup. The dashboards directory is bind-mounted from ./grafana/dashboards/.
+
+apiVersion: 1
+
+providers:
+  - name: olx-dashboards
+    folder: ''
+    type: file
+    disableDeletion: false
+    allowUiUpdates: true
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false
