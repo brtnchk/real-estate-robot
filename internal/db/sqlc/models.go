@@ -104,6 +104,22 @@ type Seller struct {
 	LastEnrichedAt pgtype.Timestamptz `json:"last_enriched_at"`
 }
 
+type SellerClassification struct {
+	SellerID           int64              `json:"seller_id"`
+	OlxUserID          string             `json:"olx_user_id"`
+	DisplayName        pgtype.Text        `json:"display_name"`
+	IsBusiness         bool               `json:"is_business"`
+	RegisteredAt       pgtype.Timestamptz `json:"registered_at"`
+	ListingsActive     int64              `json:"listings_active"`
+	DistrictsCount     int64              `json:"districts_count"`
+	CitiesCount        int64              `json:"cities_count"`
+	ScorePersonhood    pgtype.Numeric     `json:"score_personhood"`
+	ScoreListingsCount pgtype.Numeric     `json:"score_listings_count"`
+	ScoreGeography     pgtype.Numeric     `json:"score_geography"`
+	ScoreAccountAge    pgtype.Numeric     `json:"score_account_age"`
+	RealSellerScore    pgtype.Numeric     `json:"real_seller_score"`
+}
+
 type SellerStat struct {
 	SellerID       int64       `json:"seller_id"`
 	OlxUserID      string      `json:"olx_user_id"`

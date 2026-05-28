@@ -1,4 +1,4 @@
-.PHONY: up down logs ps psql rabbit-ui migrate migrate-down migrate-status topology build publish consume sqlc db-demo fetcher parser enricher discovery test test-v test-cover
+.PHONY: up down logs ps psql rabbit-ui migrate migrate-down migrate-status topology build publish consume sqlc db-demo fetcher parser enricher discovery classify test test-v test-cover
 
 # --- infra ------------------------------------------------------------------
 
@@ -84,6 +84,12 @@ enricher:
 #   make publish q=listings.discover m='{"search_url":"...","page":1}'
 discovery:
 	AMQP_URL="$(AMQP_URL)" go run ./cmd/discovery
+
+# Rank sellers by real_seller_score. Pass --refresh after adding listings.
+#   make classify
+#   make classify args='--refresh --limit 10 --min-listings 2'
+classify:
+	DATABASE_URL="$(DB_URL)" go run ./cmd/classify $(args)
 
 # --- tests ------------------------------------------------------------------
 

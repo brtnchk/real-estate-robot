@@ -15,6 +15,8 @@ type Querier interface {
 	GetLatestFetchByURL(ctx context.Context, url string) (ListingHtmlFetch, error)
 	GetListingByOlxID(ctx context.Context, olxListingID string) (Listing, error)
 	GetSellerByOlxID(ctx context.Context, olxUserID string) (Seller, error)
+	// Single seller's score and component breakdown.
+	GetSellerClassification(ctx context.Context, olxUserID string) (SellerClassification, error)
 	// Append-only: every fetch attempt that lands here gets a new row.
 	// The fetcher writes successes (status 2xx, body present) and permanent
 	// failures (4xx, body NULL). Transient failures are NOT stored here —
@@ -28,6 +30,14 @@ type Querier interface {
 	// finished (successfully or not — even a 404'd profile counts, otherwise
 	// we'd retry-storm a dead URL forever).
 	MarkSellerEnriched(ctx context.Context, id int64) error
+	// Refresh the materialized view that the classifier reads from. Run after
+	// a batch of new listings has been parsed and before re-running classify.
+	// CONCURRENTLY needs the UNIQUE index that 0001_init.sql declares.
+	RefreshSellerStats(ctx context.Context) error
+	// Returns the top-N sellers by real_seller_score, used by `cmd/classify`.
+	// Ties broken by listings_active DESC so the ranking is deterministic
+	// (otherwise PostgreSQL's row order on equal scores is implementation-defined).
+	TopRealSellers(ctx context.Context, arg TopRealSellersParams) ([]SellerClassification, error)
 	// Insert or update by olx_listing_id. Same timestamp semantics as sellers:
 	// created_at / first_seen_at frozen on insert, last_seen_at / last_scraped_at
 	// bumped on every call, updated_at handled by the trigger.

@@ -78,6 +78,10 @@ after a configurable retry budget.
 
 ## Design highlights
 
+- **Explainable classifier** — every seller score is the sum of four
+  named components (personhood / listings_count / geography / account_age),
+  exposed as separate columns of the `seller_classifications` view. When
+  a result looks wrong you can tell which signal dominated; no black box.
 - **Parser reads OLX's `__PRERENDERED_STATE__` JSON** instead of scraping
   the DOM. OLX is Next.js-style and ships every listing's full state as
   an inline JSON blob — orders of magnitude more stable than CSS
@@ -246,11 +250,12 @@ applied as new migrations, never by editing old ones.
 - [x] Discovery worker — self-paginating search-page crawler
 - [x] Unit tests for pure helpers
 - [x] Real OLX HTML parser via `__PRERENDERED_STATE__` JSON extraction
+- [x] Classification: heuristic "real seller" score (`seller_classifications`
+      view) + `cmd/classify` CLI with per-component breakdown
 - [ ] Relative-URL resolution in discovery (OLX search pages use `/d/...`,
       not absolute URLs)
 - [ ] testcontainers-go integration tests for worker `Handle` methods
-- [ ] Classification: heuristic "real seller" score over `seller_stats`
-- [ ] CLI for ad-hoc queries against the dataset
+- [ ] HTTP/JSON API on top of the classifier
 
 ## Notes
 
