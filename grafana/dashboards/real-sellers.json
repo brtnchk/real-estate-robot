@@ -4,9 +4,32 @@
   "tags": ["olx"],
   "timezone": "browser",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "30s",
   "time": {"from": "now-30d", "to": "now"},
+  "templating": {
+    "list": [
+      {
+        "name": "max_age_days",
+        "label": "Listings posted within",
+        "description": "Filter the table by listing age. 'all' disables the filter.",
+        "type": "custom",
+        "query": "7 : last 7 days, 30 : last 30 days, 90 : last 90 days, 365 : last year, 99999 : all",
+        "options": [
+          {"selected": false, "text": "last 7 days",  "value": "7"},
+          {"selected": true,  "text": "last 30 days", "value": "30"},
+          {"selected": false, "text": "last 90 days", "value": "90"},
+          {"selected": false, "text": "last year",    "value": "365"},
+          {"selected": false, "text": "all",          "value": "99999"}
+        ],
+        "current": {"selected": true, "text": "last 30 days", "value": "30"},
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "skipUrlSync": false
+      }
+    ]
+  },
   "panels": [
     {
       "id": 1,
@@ -72,11 +95,12 @@
       "id": 5,
       "type": "table",
       "title": "Listings ranked by 'real private seller' score — click the title to open on OLX",
+      "description": "Filtered by the dropdown above. NULL posted_at rows are always excluded — we only show listings whose age we actually know.",
       "gridPos": {"h": 20, "w": 24, "x": 0, "y": 4},
       "datasource": {"type": "postgres", "uid": "olx-postgres"},
       "targets": [{
         "refId": "A",
-        "rawSql": "SELECT real_seller_score AS score, title, price, currency, district, city, seller_name, is_business, seller_listings_active AS seller_listings, seller_districts_count AS seller_districts, posted_at, url FROM listings_with_classification ORDER BY real_seller_score DESC, posted_at DESC NULLS LAST LIMIT 200",
+        "rawSql": "SELECT real_seller_score AS score, title, price, currency, district, city, seller_name, is_business, seller_listings_active AS seller_listings, seller_districts_count AS seller_districts, posted_at, url FROM listings_with_classification WHERE posted_at >= NOW() - (interval '1 day' * ${max_age_days:raw}) ORDER BY real_seller_score DESC, posted_at DESC LIMIT 200",
         "format": "table"
       }],
       "fieldConfig": {
