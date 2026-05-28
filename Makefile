@@ -80,10 +80,13 @@ parser:
 enricher:
 	DATABASE_URL="$(DB_URL)" AMQP_URL="$(AMQP_URL)" go run ./cmd/enricher
 
-# Run the discovery worker. Ctrl+C to stop. Bootstrap with:
-#   make publish q=listings.discover m='{"search_url":"...","page":1}'
+# Run the discovery worker. Ctrl+C to stop. Bootstrap via the scheduler
+# or by hand: make publish q=listings.discover m='{"search_url":"...","page":1}'
+#
+# --max-page 5 reaches past the promoted block on page 1 (which OLX
+# packs with Київ-city ads) into the long tail of oblast-region cities.
 discovery:
-	AMQP_URL="$(AMQP_URL)" go run ./cmd/discovery
+	AMQP_URL="$(AMQP_URL)" go run ./cmd/discovery --max-page 5 $(args)
 
 # Run the scheduler. Re-publishes discovery tasks every --interval so the
 # pipeline picks up new OLX listings without manual prodding.
