@@ -22,11 +22,29 @@ REFRESH MATERIALIZED VIEW CONCURRENTLY seller_stats;
 -- The HTTP API's main query: filtered listings with their seller score.
 -- max_age_days = 99999 effectively disables the recency filter (NOW() -
 -- 273 years catches everything in practice).
+--
+-- property_type and deal_type are "empty string = no filter" — if the
+-- caller passes '', the OR-branch short-circuits and all rows pass; if
+-- they pass a concrete value (e.g. 'квартири'), only matching rows do.
+-- NULL property_type / deal_type rows are excluded when a filter is set,
+-- which is what we want: filtering on a category implies "give me data
+-- that actually carries that category".
 SELECT * FROM listings_with_classification
  WHERE posted_at >= NOW() - (interval '1 day' * sqlc.arg('max_age_days')::int)
    AND real_seller_score >= sqlc.arg('min_score')::numeric
+   AND (sqlc.arg('property_type')::text = '' OR property_type = sqlc.arg('property_type')::text)
+   AND (sqlc.arg('deal_type')::text     = '' OR deal_type     = sqlc.arg('deal_type')::text)
  ORDER BY real_seller_score DESC, posted_at DESC
  LIMIT sqlc.arg('limit_n')::int;
+
+-- name: GetDistinctCategories :many
+-- Distinct (property_type, deal_type) pairs present in the dataset, used
+-- to populate the frontend dropdowns dynamically (no hardcoded list).
+SELECT property_type, deal_type, COUNT(*)::int AS n
+  FROM listings_with_classification
+ WHERE property_type IS NOT NULL AND property_type <> ''
+ GROUP BY property_type, deal_type
+ ORDER BY n DESC, property_type;
 
 -- name: GetSellerCounts :many
 -- Two rows: one for is_business=false, one for true. Used by the API's

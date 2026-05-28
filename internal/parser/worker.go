@@ -104,6 +104,7 @@ func (w *Worker) Handle(ctx context.Context, d amqp.Delivery) error {
 			Currency:     text(res.Listing.Currency),
 			Status:       defaultIfEmpty(res.Listing.Status, "active"),
 			PropertyType: text(res.Listing.PropertyType),
+			DealType:     text(res.Listing.DealType),
 			City:         text(res.Listing.City),
 			District:     text(res.Listing.District),
 			Address:      text(res.Listing.Address),

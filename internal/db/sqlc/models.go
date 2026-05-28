@@ -92,6 +92,8 @@ type ListingsWithClassification struct {
 	SellerListingsActive int64              `json:"seller_listings_active"`
 	SellerDistrictsCount int64              `json:"seller_districts_count"`
 	RealSellerScore      pgtype.Numeric     `json:"real_seller_score"`
+	PropertyType         pgtype.Text        `json:"property_type"`
+	DealType             pgtype.Text        `json:"deal_type"`
 }
 
 type ScrapeJob struct {

@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -56,8 +57,17 @@ type Listing struct {
 	Lat *float64
 	Lon *float64
 
-	PropertyType string          // category.type — "real_estate"
-	Attributes   json.RawMessage // ad.params — list of {key,name,value,normalizedValue}
+	// PropertyType is the OLX leaf category label, lowercased Ukrainian:
+	// "квартири", "будинки", "земельні ділянки", "приміщення", etc.
+	// Derived from the third breadcrumb (after "Головна" / "Нерухомість").
+	PropertyType string
+
+	// DealType is normalized to "sale", "rent_long", or "rent_short" based
+	// on the URL prefix of the fourth breadcrumb ("prodazha-", "arenda-",
+	// or "posutochno"/"pochasovo"). Empty if it can't be determined.
+	DealType string
+
+	Attributes json.RawMessage // ad.params — list of {key,name,value,normalizedValue}
 }
 
 // Parse extracts a Result from an OLX listing page. pageURL is informational —
@@ -88,6 +98,8 @@ func Parse(pageURL string, html []byte) (Result, error) {
 		IsBusiness:   a.IsBusiness,
 	}
 
+	propertyType, dealType := categorizeFromBreadcrumbs(p.Ad.Breadcrumbs)
+
 	listing := Listing{
 		OlxListingID: strconv.FormatInt(a.ID, 10),
 		URL:          a.URL,
@@ -98,7 +110,8 @@ func Parse(pageURL string, html []byte) (Result, error) {
 		City:         a.Location.CityName,
 		District:     a.Location.DistrictName,
 		Address:      a.Location.PathName,
-		PropertyType: a.Category.Type,
+		PropertyType: propertyType,
+		DealType:     dealType,
 		Attributes:   a.Params,
 	}
 	if v := a.Price.RegularPrice.Value; v > 0 {
@@ -147,8 +160,15 @@ func fallbackParse(pageURL string, html []byte, stateErr error) (Result, error) 
 
 type prerendered struct {
 	Ad struct {
-		Ad ad `json:"ad"`
+		Ad          ad           `json:"ad"`
+		Breadcrumbs []breadcrumb `json:"breadcrumbs"`
 	} `json:"ad"`
+}
+
+type breadcrumb struct {
+	Label      string `json:"label"`
+	Href       string `json:"href"`
+	CategoryID int    `json:"categoryId,omitempty"`
 }
 
 type ad struct {
@@ -258,4 +278,38 @@ func extractPrerenderedState(html []byte) ([]byte, error) {
 // Lives in hash.go so the production hash helper can be tested in isolation.
 func hashFragment(s string) string {
 	return sha256NewSum(s)[:12]
+}
+
+// categorizeFromBreadcrumbs extracts the property type and deal type from
+// the OLX breadcrumbs array.
+//
+//	breadcrumbs[0]  "Головна"
+//	breadcrumbs[1]  "Нерухомість"      (top category)
+//	breadcrumbs[2]  "Квартири" / ...   ← property_type label
+//	breadcrumbs[3]  "Продаж квартир"   ← deal_type derived from URL prefix
+//	breadcrumbs[4+] location refinements (region/city/district)
+//
+// Returns ("", "") when the array is too short — the caller will store
+// empty strings and the rest of the pipeline tolerates that.
+func categorizeFromBreadcrumbs(crumbs []breadcrumb) (propertyType, dealType string) {
+	if len(crumbs) > 2 {
+		propertyType = strings.ToLower(strings.TrimSpace(crumbs[2].Label))
+	}
+	if len(crumbs) > 3 {
+		dealType = dealTypeFromHref(crumbs[3].Href)
+	}
+	return
+}
+
+func dealTypeFromHref(href string) string {
+	href = strings.ToLower(href)
+	switch {
+	case strings.Contains(href, "/prodazha-"):
+		return "sale"
+	case strings.Contains(href, "/posutochno-") || strings.Contains(href, "/pochasovo-"):
+		return "rent_short"
+	case strings.Contains(href, "/arenda-") || strings.Contains(href, "/dolgosrochnaya-"):
+		return "rent_long"
+	}
+	return ""
 }

@@ -140,8 +140,11 @@ func TestParse_RealOLXListing(t *testing.T) {
 	if r.Listing.PostedAt == nil {
 		t.Error("PostedAt: got nil, want non-nil")
 	}
-	if got, want := r.Listing.PropertyType, "real_estate"; got != want {
+	if got, want := r.Listing.PropertyType, "квартири"; got != want {
 		t.Errorf("PropertyType: got %q, want %q", got, want)
+	}
+	if got, want := r.Listing.DealType, "sale"; got != want {
+		t.Errorf("DealType: got %q, want %q", got, want)
 	}
 	if len(r.Listing.Attributes) == 0 {
 		t.Error("Attributes: got empty, want non-empty (10 params in fixture)")
@@ -183,5 +186,94 @@ func TestExtractPrerenderedState_UnterminatedStringLiteral(t *testing.T) {
 	_, err := extractPrerenderedState(html)
 	if err == nil {
 		t.Fatal("expected error for unterminated literal, got nil")
+	}
+}
+
+// TestCategorizeFromBreadcrumbs is table-driven over the four OLX
+// categories we know about, plus the empty/short-input fallbacks.
+func TestCategorizeFromBreadcrumbs(t *testing.T) {
+	cases := []struct {
+		name             string
+		crumbs           []breadcrumb
+		wantPropertyType string
+		wantDealType     string
+	}{
+		{
+			name: "apartments sale",
+			crumbs: []breadcrumb{
+				{Label: "Головна", Href: "/uk/"},
+				{Label: "Нерухомість", Href: "/uk/nedvizhimost/"},
+				{Label: "Квартири", Href: "/uk/nedvizhimost/kvartiry/"},
+				{Label: "Продаж квартир", Href: "/uk/nedvizhimost/kvartiry/prodazha-kvartir/"},
+			},
+			wantPropertyType: "квартири",
+			wantDealType:     "sale",
+		},
+		{
+			name: "houses sale",
+			crumbs: []breadcrumb{
+				{Label: "Головна", Href: "/uk/"},
+				{Label: "Нерухомість", Href: "/uk/nedvizhimost/"},
+				{Label: "Будинки", Href: "/uk/nedvizhimost/doma/"},
+				{Label: "Продаж будинків", Href: "/uk/nedvizhimost/doma/prodazha-domov/"},
+			},
+			wantPropertyType: "будинки",
+			wantDealType:     "sale",
+		},
+		{
+			name: "apartments long-term rent",
+			crumbs: []breadcrumb{
+				{Label: "Головна"}, {Label: "Нерухомість"},
+				{Label: "Квартири", Href: "/uk/nedvizhimost/kvartiry/"},
+				{Label: "Довгострокова оренда квартир", Href: "/uk/nedvizhimost/kvartiry/arenda-kvartir/"},
+			},
+			wantPropertyType: "квартири",
+			wantDealType:     "rent_long",
+		},
+		{
+			name: "apartments daily rent",
+			crumbs: []breadcrumb{
+				{Label: "Головна"}, {Label: "Нерухомість"},
+				{Label: "Квартири"},
+				{Label: "Подобово", Href: "/uk/nedvizhimost/kvartiry/posutochno-pochasovo/"},
+			},
+			wantPropertyType: "квартири",
+			wantDealType:     "rent_short",
+		},
+		{
+			name: "land",
+			crumbs: []breadcrumb{
+				{Label: "Головна"}, {Label: "Нерухомість"},
+				{Label: "Земельні ділянки"},
+				{Label: "Продаж землі", Href: "/uk/nedvizhimost/zemlya/prodazha-zemli/"},
+			},
+			wantPropertyType: "земельні ділянки",
+			wantDealType:     "sale",
+		},
+		{
+			name:             "empty crumbs",
+			crumbs:           nil,
+			wantPropertyType: "",
+			wantDealType:     "",
+		},
+		{
+			name: "only two crumbs (no property type yet)",
+			crumbs: []breadcrumb{
+				{Label: "Головна"}, {Label: "Нерухомість"},
+			},
+			wantPropertyType: "",
+			wantDealType:     "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pt, dt := categorizeFromBreadcrumbs(tc.crumbs)
+			if pt != tc.wantPropertyType {
+				t.Errorf("property_type: got %q, want %q", pt, tc.wantPropertyType)
+			}
+			if dt != tc.wantDealType {
+				t.Errorf("deal_type: got %q, want %q", dt, tc.wantDealType)
+			}
+		})
 	}
 }

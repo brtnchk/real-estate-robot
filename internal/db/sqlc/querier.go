@@ -11,6 +11,9 @@ import (
 type Querier interface {
 	CountListings(ctx context.Context) (int64, error)
 	CountSellers(ctx context.Context) (int64, error)
+	// Distinct (property_type, deal_type) pairs present in the dataset, used
+	// to populate the frontend dropdowns dynamically (no hardcoded list).
+	GetDistinctCategories(ctx context.Context) ([]GetDistinctCategoriesRow, error)
 	GetFetchByID(ctx context.Context, id int64) (ListingHtmlFetch, error)
 	GetLatestFetchByURL(ctx context.Context, url string) (ListingHtmlFetch, error)
 	GetListingByOlxID(ctx context.Context, olxListingID string) (Listing, error)
@@ -32,6 +35,13 @@ type Querier interface {
 	// The HTTP API's main query: filtered listings with their seller score.
 	// max_age_days = 99999 effectively disables the recency filter (NOW() -
 	// 273 years catches everything in practice).
+	//
+	// property_type and deal_type are "empty string = no filter" — if the
+	// caller passes '', the OR-branch short-circuits and all rows pass; if
+	// they pass a concrete value (e.g. 'квартири'), only matching rows do.
+	// NULL property_type / deal_type rows are excluded when a filter is set,
+	// which is what we want: filtering on a category implies "give me data
+	// that actually carries that category".
 	ListListingsForAPI(ctx context.Context, arg ListListingsForAPIParams) ([]ListingsWithClassification, error)
 	// Stamp the freshness gate. Called by the enrich worker after it has
 	// finished (successfully or not — even a 404'd profile counts, otherwise

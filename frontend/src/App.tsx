@@ -8,6 +8,8 @@ interface Listing {
   currency?: string
   city?: string
   district?: string
+  property_type?: string
+  deal_type?: string
   posted_at?: string
   seller_name?: string
   is_business: boolean
@@ -21,6 +23,18 @@ interface Stats {
   business_sellers: number
   private_avg_score: number
   business_avg_score: number
+}
+
+interface Category {
+  property_type: string
+  deal_type?: string
+  count: number
+}
+
+const DEAL_TYPE_LABELS: Record<string, string> = {
+  sale: 'продаж',
+  rent_long: 'довгострокова оренда',
+  rent_short: 'подобово',
 }
 
 const AGE_OPTIONS = [
@@ -42,28 +56,35 @@ function scoreClass(s: number): string {
 function App() {
   const [listings, setListings] = useState<Listing[]>([])
   const [stats, setStats] = useState<Stats | null>(null)
+  const [categories, setCategories] = useState<Category[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
   const [maxAgeDays, setMaxAgeDays] = useState(30)
   const [minScore, setMinScore] = useState(0)
   const [limit, setLimit] = useState(100)
+  const [propertyType, setPropertyType] = useState('')
+  const [dealType, setDealType] = useState('')
 
-  // Stats fetched once on mount — they describe the whole dataset, not the
-  // currently-filtered view.
+  // Stats + categories fetched once on mount — they describe the dataset
+  // scope, not the currently-filtered view.
   useEffect(() => {
-    fetch('/api/stats')
-      .then((r) => r.json())
-      .then(setStats)
-      .catch(() => {})
+    fetch('/api/stats').then((r) => r.json()).then(setStats).catch(() => {})
+    fetch('/api/categories').then((r) => r.json()).then(setCategories).catch(() => {})
   }, [])
 
   // Listings re-fetch whenever any filter changes.
   useEffect(() => {
     setLoading(true)
     setError(null)
-    const url = `/api/listings?max_age_days=${maxAgeDays}&min_score=${minScore}&limit=${limit}`
-    fetch(url)
+    const params = new URLSearchParams({
+      max_age_days: String(maxAgeDays),
+      min_score: String(minScore),
+      limit: String(limit),
+    })
+    if (propertyType) params.set('property_type', propertyType)
+    if (dealType) params.set('deal_type', dealType)
+    fetch(`/api/listings?${params}`)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
@@ -76,7 +97,26 @@ function App() {
         setError(String(e))
         setLoading(false)
       })
-  }, [maxAgeDays, minScore, limit])
+  }, [maxAgeDays, minScore, limit, propertyType, dealType])
+
+  // Distinct property_types in current dataset (with total counts).
+  const propertyTypes = Array.from(
+    categories.reduce((m, c) => {
+      m.set(c.property_type, (m.get(c.property_type) || 0) + c.count)
+      return m
+    }, new Map<string, number>())
+  ).sort((a, b) => b[1] - a[1])
+
+  // Distinct deal_types — narrowed to the selected property type if any.
+  const dealTypes = Array.from(
+    categories
+      .filter((c) => !propertyType || c.property_type === propertyType)
+      .reduce((m, c) => {
+        if (!c.deal_type) return m
+        m.set(c.deal_type, (m.get(c.deal_type) || 0) + c.count)
+        return m
+      }, new Map<string, number>())
+  ).sort((a, b) => b[1] - a[1])
 
   return (
     <div className="container">
@@ -97,6 +137,36 @@ function App() {
       </header>
 
       <div className="filters">
+        <label>
+          <span>Property type</span>
+          <select
+            value={propertyType}
+            onChange={(e) => {
+              setPropertyType(e.target.value)
+              setDealType('') // reset deal type when property type changes
+            }}
+          >
+            <option value="">all types</option>
+            {propertyTypes.map(([type, n]) => (
+              <option key={type} value={type}>
+                {type} ({n})
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label>
+          <span>Deal type</span>
+          <select value={dealType} onChange={(e) => setDealType(e.target.value)}>
+            <option value="">all deals</option>
+            {dealTypes.map(([type, n]) => (
+              <option key={type} value={type}>
+                {DEAL_TYPE_LABELS[type] ?? type} ({n})
+              </option>
+            ))}
+          </select>
+        </label>
+
         <label>
           <span>Posted within</span>
           <select value={maxAgeDays} onChange={(e) => setMaxAgeDays(Number(e.target.value))}>

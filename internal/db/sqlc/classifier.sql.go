@@ -11,6 +11,42 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getDistinctCategories = `-- name: GetDistinctCategories :many
+SELECT property_type, deal_type, COUNT(*)::int AS n
+  FROM listings_with_classification
+ WHERE property_type IS NOT NULL AND property_type <> ''
+ GROUP BY property_type, deal_type
+ ORDER BY n DESC, property_type
+`
+
+type GetDistinctCategoriesRow struct {
+	PropertyType pgtype.Text `json:"property_type"`
+	DealType     pgtype.Text `json:"deal_type"`
+	N            int32       `json:"n"`
+}
+
+// Distinct (property_type, deal_type) pairs present in the dataset, used
+// to populate the frontend dropdowns dynamically (no hardcoded list).
+func (q *Queries) GetDistinctCategories(ctx context.Context) ([]GetDistinctCategoriesRow, error) {
+	rows, err := q.db.Query(ctx, getDistinctCategories)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetDistinctCategoriesRow
+	for rows.Next() {
+		var i GetDistinctCategoriesRow
+		if err := rows.Scan(&i.PropertyType, &i.DealType, &i.N); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getSellerClassification = `-- name: GetSellerClassification :one
 SELECT seller_id, olx_user_id, display_name, is_business, registered_at, listings_active, districts_count, cities_count, score_personhood, score_listings_count, score_geography, score_account_age, real_seller_score FROM seller_classifications
  WHERE olx_user_id = $1
@@ -76,24 +112,41 @@ func (q *Queries) GetSellerCounts(ctx context.Context) ([]GetSellerCountsRow, er
 }
 
 const listListingsForAPI = `-- name: ListListingsForAPI :many
-SELECT listing_id, olx_listing_id, url, title, price, currency, city, district, posted_at, listing_last_seen, seller_id, olx_user_id, seller_name, is_business, seller_registered_at, seller_listings_active, seller_districts_count, real_seller_score FROM listings_with_classification
+SELECT listing_id, olx_listing_id, url, title, price, currency, city, district, posted_at, listing_last_seen, seller_id, olx_user_id, seller_name, is_business, seller_registered_at, seller_listings_active, seller_districts_count, real_seller_score, property_type, deal_type FROM listings_with_classification
  WHERE posted_at >= NOW() - (interval '1 day' * $1::int)
    AND real_seller_score >= $2::numeric
+   AND ($3::text = '' OR property_type = $3::text)
+   AND ($4::text     = '' OR deal_type     = $4::text)
  ORDER BY real_seller_score DESC, posted_at DESC
- LIMIT $3::int
+ LIMIT $5::int
 `
 
 type ListListingsForAPIParams struct {
-	MaxAgeDays int32          `json:"max_age_days"`
-	MinScore   pgtype.Numeric `json:"min_score"`
-	LimitN     int32          `json:"limit_n"`
+	MaxAgeDays   int32          `json:"max_age_days"`
+	MinScore     pgtype.Numeric `json:"min_score"`
+	PropertyType string         `json:"property_type"`
+	DealType     string         `json:"deal_type"`
+	LimitN       int32          `json:"limit_n"`
 }
 
 // The HTTP API's main query: filtered listings with their seller score.
 // max_age_days = 99999 effectively disables the recency filter (NOW() -
 // 273 years catches everything in practice).
+//
+// property_type and deal_type are "empty string = no filter" — if the
+// caller passes ”, the OR-branch short-circuits and all rows pass; if
+// they pass a concrete value (e.g. 'квартири'), only matching rows do.
+// NULL property_type / deal_type rows are excluded when a filter is set,
+// which is what we want: filtering on a category implies "give me data
+// that actually carries that category".
 func (q *Queries) ListListingsForAPI(ctx context.Context, arg ListListingsForAPIParams) ([]ListingsWithClassification, error) {
-	rows, err := q.db.Query(ctx, listListingsForAPI, arg.MaxAgeDays, arg.MinScore, arg.LimitN)
+	rows, err := q.db.Query(ctx, listListingsForAPI,
+		arg.MaxAgeDays,
+		arg.MinScore,
+		arg.PropertyType,
+		arg.DealType,
+		arg.LimitN,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -120,6 +173,8 @@ func (q *Queries) ListListingsForAPI(ctx context.Context, arg ListListingsForAPI
 			&i.SellerListingsActive,
 			&i.SellerDistrictsCount,
 			&i.RealSellerScore,
+			&i.PropertyType,
+			&i.DealType,
 		); err != nil {
 			return nil, err
 		}
