@@ -7,6 +7,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -16,12 +17,14 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/brtnchk/real-estate-robot/internal/db/sqlc"
+	"github.com/brtnchk/real-estate-robot/internal/queue"
 )
 
 // Server holds dependencies and exposes Handler() for the HTTP server.
 type Server struct {
-	Queries *sqlc.Queries
-	Log     *slog.Logger
+	Queries   *sqlc.Queries
+	Publisher *queue.Publisher // nil when AMQP not configured; crawl endpoint returns 503
+	Log       *slog.Logger
 }
 
 // Handler wires the routes and middleware (CORS for local dev).
@@ -32,6 +35,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/stats", s.stats)
 	mux.HandleFunc("GET /api/categories", s.categories)
 	mux.HandleFunc("GET /api/cities", s.cities)
+	mux.HandleFunc("POST /api/crawl", s.crawl)
 	return logRequest(s.Log, cors(mux))
 }
 
@@ -138,6 +142,52 @@ func (s *Server) cities(w http.ResponseWriter, r *http.Request) {
 		out = append(out, CityCount{City: r.City.String, Count: r.N})
 	}
 	writeJSON(w, http.StatusOK, out)
+}
+
+// CrawlRequest is the body for POST /api/crawl.
+type CrawlRequest struct {
+	CitySlug     string `json:"city_slug"`
+	CategorySlug string `json:"category_slug"`
+}
+
+// discoveryTask mirrors discovery.Task without importing that package.
+type discoveryTask struct {
+	SearchURL string `json:"search_url"`
+	Page      int    `json:"page"`
+}
+
+func (s *Server) crawl(w http.ResponseWriter, r *http.Request) {
+	if s.Publisher == nil {
+		writeJSON(w, http.StatusServiceUnavailable,
+			map[string]string{"error": "AMQP not configured — start api with AMQP_URL set"})
+		return
+	}
+
+	var req CrawlRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+		return
+	}
+	if req.CitySlug == "" || req.CategorySlug == "" {
+		writeJSON(w, http.StatusBadRequest,
+			map[string]string{"error": "city_slug and category_slug are required"})
+		return
+	}
+
+	url := fmt.Sprintf("https://www.olx.ua/uk/nedvizhimost/%s/%s/", req.CategorySlug, req.CitySlug)
+	body, _ := json.Marshal(discoveryTask{SearchURL: url, Page: 1})
+
+	if err := s.Publisher.Publish(r.Context(), queue.QueueListingsDiscover, body); err != nil {
+		s.Log.Error("publish crawl task", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to queue task"})
+		return
+	}
+
+	s.Log.Info("crawl queued", "city", req.CitySlug, "category", req.CategorySlug, "url", url)
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"status": "crawling",
+		"url":    url,
+	})
 }
 
 func (s *Server) categories(w http.ResponseWriter, r *http.Request) {

@@ -107,8 +107,10 @@ refresh-stats:
 	    -c "REFRESH MATERIALIZED VIEW CONCURRENTLY seller_stats;"
 
 # Run the HTTP/JSON API the frontend talks to.
+# AMQP_URL is optional: without it all read endpoints work;
+# only POST /api/crawl (city search trigger) requires it.
 api:
-	DATABASE_URL="$(DB_URL)" go run ./cmd/api
+	DATABASE_URL="$(DB_URL)" AMQP_URL="$(AMQP_URL)" go run ./cmd/api
 
 # Run the React frontend dev server. Proxies /api to localhost:8080.
 #   Opens http://localhost:5173

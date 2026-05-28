@@ -20,6 +20,7 @@ import (
 	"github.com/brtnchk/real-estate-robot/internal/api"
 	"github.com/brtnchk/real-estate-robot/internal/db"
 	"github.com/brtnchk/real-estate-robot/internal/db/sqlc"
+	"github.com/brtnchk/real-estate-robot/internal/queue"
 )
 
 func main() {
@@ -44,9 +45,22 @@ func main() {
 	}
 	defer pool.Close()
 
+	// AMQP is optional — read-only endpoints work without it.
+	// Only POST /api/crawl needs a publisher.
+	var pub *queue.Publisher
+	if amqpURL := os.Getenv("AMQP_URL"); amqpURL != "" {
+		pub, err = queue.NewPublisher(amqpURL, log)
+		if err != nil {
+			log.Warn("AMQP unavailable, /api/crawl disabled", "err", err)
+		} else {
+			defer func() { _ = pub.Close() }()
+		}
+	}
+
 	srv := &api.Server{
-		Queries: sqlc.New(pool),
-		Log:     log,
+		Queries:   sqlc.New(pool),
+		Publisher: pub,
+		Log:       log,
 	}
 
 	httpServer := &http.Server{

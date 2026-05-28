@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { SearchPanel } from './SearchPanel'
 
 interface Listing {
   listing_id: number
@@ -73,6 +74,11 @@ function App() {
   const [dealType, setDealType] = useState('')
   const [city, setCity] = useState('')
 
+  // polling state after a crawl is triggered from SearchPanel
+  const [crawlingCity, setCrawlingCity] = useState<string | null>(null)
+  const [crawlMsg, setCrawlMsg] = useState('')
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+
   // Stats + categories + cities fetched once on mount — they describe the
   // dataset scope, not the currently-filtered view.
   useEffect(() => {
@@ -80,6 +86,50 @@ function App() {
     fetch('/api/categories').then((r) => r.json()).then(setCategories).catch(() => {})
     fetch('/api/cities').then((r) => r.json()).then(setCities).catch(() => {})
   }, [])
+
+  // Refresh cities/stats/categories every 15s while a crawl is in progress.
+  const refreshDimensions = () => {
+    fetch('/api/stats').then((r) => r.json()).then(setStats).catch(() => {})
+    fetch('/api/categories').then((r) => r.json()).then(setCategories).catch(() => {})
+    fetch('/api/cities').then((r) => r.json()).then(setCities).catch(() => {})
+  }
+
+  function handleCrawlStarted(cityName: string) {
+    setCrawlingCity(cityName)
+    setCrawlMsg(`Запускаємо пошук для "${cityName}"… зазвичай займає 60–90 секунд.`)
+
+    // Stop any previous poll
+    if (pollRef.current) clearInterval(pollRef.current)
+
+    let attempts = 0
+    const MAX = 24 // 24 × 5s = 2 min max
+
+    pollRef.current = setInterval(() => {
+      attempts++
+      refreshDimensions()
+
+      // Check if the city appeared in /api/cities
+      fetch('/api/cities')
+        .then((r) => r.json())
+        .then((data: CityCount[]) => {
+          const found = data.some((c) => c.city === cityName)
+          if (found || attempts >= MAX) {
+            clearInterval(pollRef.current!)
+            pollRef.current = null
+            setCrawlingCity(null)
+            if (found) {
+              setCrawlMsg(`"${cityName}" додано! Виберіть місто у фільтрі нижче.`)
+              setCity(cityName)        // auto-select the new city in the filter
+            } else {
+              setCrawlMsg(
+                `Час очікування вийшов. Переконайтеся, що воркери запущені (make discovery, make fetcher, make parser), потім спробуйте знову.`
+              )
+            }
+          }
+        })
+        .catch(() => {})
+    }, 5000)
+  }
 
   // Listings re-fetch whenever any filter changes.
   useEffect(() => {
@@ -129,6 +179,15 @@ function App() {
 
   return (
     <div className="container">
+      <SearchPanel onCrawlStarted={handleCrawlStarted} />
+
+      {crawlMsg && (
+        <div className={`crawl-notice ${crawlingCity ? 'crawl-notice--running' : 'crawl-notice--done'}`}>
+          {crawlingCity && <span className="crawl-spinner" />}
+          {crawlMsg}
+        </div>
+      )}
+
       <header>
         <h1>OLX Real Private Sellers</h1>
         {stats && (
