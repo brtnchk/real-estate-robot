@@ -25,8 +25,8 @@ services:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-olx}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-olx}
     ports:
-      - "${RABBITMQ_PORT:-5672}:5672"        # AMQP
-      - "${RABBITMQ_MGMT_PORT:-15672}:15672" # Management UI: http://localhost:15672
+      - "${RABBITMQ_PORT:-5672}:5672"
+      - "${RABBITMQ_MGMT_PORT:-15672}:15672"
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
     healthcheck:
@@ -34,6 +34,100 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+
+  # ---- one-shot setup services (run once, then exit) ----------------------
+
+  migrate:
+    build: .
+    command: goose -dir /app/migrations postgres "postgres://olx:olx@postgres:5432/olx?sslmode=disable" up
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  topology:
+    build: .
+    command: topology
+    environment:
+      AMQP_URL: amqp://olx:olx@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    restart: "no"
+
+  # ---- pipeline workers (keep running, restart on crash) ------------------
+
+  scheduler:
+    build: .
+    command: >
+      scheduler
+        --interval ${SCHEDULER_INTERVAL:-30m}
+        --cities   ${SCHEDULER_CITIES:-kiev,bucha,irpen,gostomel}
+        --categories ${SCHEDULER_CATEGORIES:-prodazha-kvartir,prodazha-domov,arenda-kvartir}
+    environment:
+      AMQP_URL: amqp://olx:olx@rabbitmq:5672/
+    depends_on:
+      topology:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  discovery:
+    build: .
+    command: discovery --max-page ${DISCOVERY_MAX_PAGE:-5}
+    environment:
+      AMQP_URL: amqp://olx:olx@rabbitmq:5672/
+    depends_on:
+      topology:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  fetcher:
+    build: .
+    command: fetcher --rps ${FETCHER_RPS:-2} --min-refetch ${FETCHER_MIN_REFETCH:-30m}
+    environment:
+      DATABASE_URL: postgres://olx:olx@postgres:5432/olx?sslmode=disable
+      AMQP_URL: amqp://olx:olx@rabbitmq:5672/
+    depends_on:
+      topology:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  parser:
+    build: .
+    command: parser
+    environment:
+      DATABASE_URL: postgres://olx:olx@postgres:5432/olx?sslmode=disable
+      AMQP_URL: amqp://olx:olx@rabbitmq:5672/
+    depends_on:
+      topology:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  enricher:
+    build: .
+    command: enricher --rps ${ENRICHER_RPS:-1} --freshness ${ENRICHER_FRESHNESS:-6h}
+    environment:
+      DATABASE_URL: postgres://olx:olx@postgres:5432/olx?sslmode=disable
+      AMQP_URL: amqp://olx:olx@rabbitmq:5672/
+    depends_on:
+      topology:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  api:
+    build: .
+    command: api --addr :8080
+    environment:
+      DATABASE_URL: postgres://olx:olx@postgres:5432/olx?sslmode=disable
+      AMQP_URL: amqp://olx:olx@rabbitmq:5672/
+    ports:
+      - "${API_PORT:-8080}:8080"
+    depends_on:
+      topology:
+        condition: service_completed_successfully
+    restart: unless-stopped
 
 volumes:
   pgdata:
