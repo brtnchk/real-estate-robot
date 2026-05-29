@@ -57,6 +57,11 @@ SELECT property_type, deal_type, COUNT(*)::int AS n
  GROUP BY property_type, deal_type
  ORDER BY n DESC, property_type;
 
+-- name: GetLastParsedAt :one
+-- When was the last time the parser committed a listing.
+-- Used to show "data as of X" in the UI.
+SELECT MAX(last_scraped_at) AS last_parsed_at FROM listings;
+
 -- name: GetSellerCounts :many
 -- Two rows: one for is_business=false, one for true. Used by the API's
 -- stats endpoint to render the private/business split.

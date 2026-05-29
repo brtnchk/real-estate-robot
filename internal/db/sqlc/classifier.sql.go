@@ -83,6 +83,19 @@ func (q *Queries) GetDistinctCities(ctx context.Context) ([]GetDistinctCitiesRow
 	return items, nil
 }
 
+const getLastParsedAt = `-- name: GetLastParsedAt :one
+SELECT MAX(last_scraped_at) AS last_parsed_at FROM listings
+`
+
+// When was the last time the parser committed a listing.
+// Used to show "data as of X" in the UI.
+func (q *Queries) GetLastParsedAt(ctx context.Context) (interface{}, error) {
+	row := q.db.QueryRow(ctx, getLastParsedAt)
+	var last_parsed_at interface{}
+	err := row.Scan(&last_parsed_at)
+	return last_parsed_at, err
+}
+
 const getSellerClassification = `-- name: GetSellerClassification :one
 SELECT seller_id, olx_user_id, display_name, is_business, registered_at, listings_active, districts_count, cities_count, score_personhood, score_listings_count, score_geography, score_account_age, real_seller_score FROM seller_classifications
  WHERE olx_user_id = $1

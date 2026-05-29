@@ -73,6 +73,7 @@ type Stats struct {
 	BusinessSellers  int32   `json:"business_sellers"`
 	PrivateAvgScore  float64 `json:"private_avg_score"`
 	BusinessAvgScore float64 `json:"business_avg_score"`
+	LastParsedAt     *string `json:"last_parsed_at,omitempty"`
 }
 
 // Category is one (property_type, deal_type) pair the frontend uses to
@@ -283,6 +284,14 @@ func (s *Server) stats(w http.ResponseWriter, r *http.Request) {
 			st.PrivateAvgScore = row.AvgScore
 		}
 	}
+
+	if raw, err := s.Queries.GetLastParsedAt(r.Context()); err == nil && raw != nil {
+		if t, ok := raw.(time.Time); ok {
+			formatted := t.Format(time.RFC3339)
+			st.LastParsedAt = &formatted
+		}
+	}
+
 	writeJSON(w, http.StatusOK, st)
 }
 

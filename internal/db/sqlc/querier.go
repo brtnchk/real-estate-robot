@@ -19,6 +19,9 @@ type Querier interface {
 	// (Ukrainian: "Київ", "Львів", "Одеса", etc.) — we don't normalize.
 	GetDistinctCities(ctx context.Context) ([]GetDistinctCitiesRow, error)
 	GetFetchByID(ctx context.Context, id int64) (ListingHtmlFetch, error)
+	// When was the last time the parser committed a listing.
+	// Used to show "data as of X" in the UI.
+	GetLastParsedAt(ctx context.Context) (interface{}, error)
 	GetLatestFetchByURL(ctx context.Context, url string) (ListingHtmlFetch, error)
 	GetListingByOlxID(ctx context.Context, olxListingID string) (Listing, error)
 	GetSellerByOlxID(ctx context.Context, olxUserID string) (Seller, error)
