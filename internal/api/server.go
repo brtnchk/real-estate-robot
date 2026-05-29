@@ -30,6 +30,28 @@ type Server struct {
 	RabbitPass  string
 }
 
+// StartBackgroundRefresh periodically refreshes the seller_stats
+// materialized view so the dashboard always reflects recent parser output.
+// Call once after creating the Server; the goroutine exits when ctx is done.
+func (s *Server) StartBackgroundRefresh(ctx context.Context, interval time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := s.Queries.RefreshSellerStats(ctx); err != nil {
+					s.Log.Warn("background refresh seller_stats", "err", err)
+				} else {
+					s.Log.Debug("seller_stats refreshed")
+				}
+			}
+		}
+	}()
+}
+
 // Handler wires the routes and middleware (CORS for local dev).
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()

@@ -91,7 +91,8 @@ func main() {
 	// Run server in a goroutine so the main thread can wait for ctx.
 	serverErr := make(chan error, 1)
 	go func() {
-		log.Info("api listening", "addr", *addr)
+		srv.StartBackgroundRefresh(ctx, 2*time.Minute)
+	log.Info("api listening", "addr", *addr)
 		if err := httpServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			serverErr <- err
 		}
