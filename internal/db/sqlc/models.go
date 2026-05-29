@@ -94,6 +94,7 @@ type ListingsWithClassification struct {
 	RealSellerScore      pgtype.Numeric     `json:"real_seller_score"`
 	PropertyType         pgtype.Text        `json:"property_type"`
 	DealType             pgtype.Text        `json:"deal_type"`
+	ManualLabel          pgtype.Text        `json:"manual_label"`
 }
 
 type ScrapeJob struct {
@@ -125,6 +126,7 @@ type Seller struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
 	LastEnrichedAt pgtype.Timestamptz `json:"last_enriched_at"`
+	ManualLabel    pgtype.Text        `json:"manual_label"`
 }
 
 type SellerClassification struct {
@@ -141,6 +143,7 @@ type SellerClassification struct {
 	ScoreGeography     pgtype.Numeric     `json:"score_geography"`
 	ScoreAccountAge    pgtype.Numeric     `json:"score_account_age"`
 	RealSellerScore    pgtype.Numeric     `json:"real_seller_score"`
+	ManualLabel        pgtype.Text        `json:"manual_label"`
 }
 
 type SellerStat struct {

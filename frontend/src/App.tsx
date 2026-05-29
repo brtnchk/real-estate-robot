@@ -3,6 +3,7 @@ import { WorkerStatus } from './WorkerStatus'
 
 interface Listing {
   listing_id: number
+  olx_user_id: string
   url: string
   title: string
   price?: number
@@ -14,6 +15,7 @@ interface Listing {
   posted_at?: string
   seller_name?: string
   is_business: boolean
+  manual_label?: string   // 'owner' | 'agency' | undefined
   seller_listings: number
   seller_districts: number
   real_seller_score: number
@@ -100,6 +102,22 @@ function App() {
     return () => clearInterval(t)
   }, [])
 
+
+  async function labelSeller(olxUserId: string, label: string | null) {
+    await fetch(`/api/sellers/${encodeURIComponent(olxUserId)}/label`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ label }),
+    })
+    // Optimistic update
+    setListings((prev) =>
+      prev.map((l) =>
+        l.olx_user_id === olxUserId
+          ? { ...l, manual_label: label ?? undefined, real_seller_score: label === 'owner' ? 1 : label === 'agency' ? 0 : l.real_seller_score }
+          : l
+      )
+    )
+  }
 
   // Listings re-fetch whenever any filter changes.
   useEffect(() => {
@@ -280,10 +298,23 @@ function App() {
               </td>
               <td>{l.district || '—'}</td>
               <td>
-                <span>{l.seller_name || '—'}</span>
-                {l.is_business && <span className="biz-badge">BIZ</span>}
+                <div className="seller-row">
+                  <span>{l.seller_name || '—'}</span>
+                  {l.is_business && <span className="biz-badge">BIZ</span>}
+                  <span className="label-btns">
+                    <button
+                      className={`label-btn ${l.manual_label === 'owner' ? 'label-btn--owner' : ''}`}
+                      title={l.manual_label === 'owner' ? 'Знято мітку власника' : 'Позначити як власник'}
+                      onClick={() => labelSeller(l.olx_user_id, l.manual_label === 'owner' ? null : 'owner')}
+                    >👤</button>
+                    <button
+                      className={`label-btn ${l.manual_label === 'agency' ? 'label-btn--agency' : ''}`}
+                      title={l.manual_label === 'agency' ? 'Знято мітку агентства' : 'Позначити як агентство'}
+                      onClick={() => labelSeller(l.olx_user_id, l.manual_label === 'agency' ? null : 'agency')}
+                    >🏢</button>
+                  </span>
+                </div>
                 <span className="seller-meta">
-                  {' '}
                   {l.seller_listings} ad{l.seller_listings === 1 ? '' : 's'} · {l.seller_districts}{' '}
                   district{l.seller_districts === 1 ? '' : 's'}
                 </span>

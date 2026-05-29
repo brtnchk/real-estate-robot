@@ -39,6 +39,10 @@ type Querier interface {
 	// The unique constraint on (listing_id, raw_hash) means re-parsing an
 	// unchanged listing is a no-op; only real changes create new rows.
 	InsertListingSnapshot(ctx context.Context, arg InsertListingSnapshotParams) (int64, error)
+	// Set or clear a manual label ('owner', 'agency', or "" to remove).
+	// NULLIF converts empty string to NULL so the caller never needs to
+	// distinguish between "set null" and "set empty string".
+	LabelSeller(ctx context.Context, arg LabelSellerParams) error
 	// The HTTP API's main query: filtered listings with their seller score.
 	// max_age_days = 99999 effectively disables the recency filter (NOW() -
 	// 273 years catches everything in practice).

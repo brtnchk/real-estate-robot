@@ -256,6 +256,28 @@ tr.score-vlow  .score { background: #ffd0d0; color: #6e0a0a; }
   vertical-align: 2px;
 }
 
+.seller-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.label-btns { display: flex; gap: 2px; margin-left: 4px; }
+.label-btn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 1px 3px;
+  line-height: 1;
+  opacity: 0.35;
+  transition: opacity 0.15s, border-color 0.15s;
+}
+.label-btn:hover { opacity: 0.8; }
+.label-btn--owner  { opacity: 1; border-color: #2e7d32; background: #e6f4ea; }
+.label-btn--agency { opacity: 1; border-color: #b85a00; background: #fff3e0; }
+
 .seller-meta {
   display: block;
   color: #999;

@@ -97,7 +97,7 @@ func (q *Queries) GetLastParsedAt(ctx context.Context) (interface{}, error) {
 }
 
 const getSellerClassification = `-- name: GetSellerClassification :one
-SELECT seller_id, olx_user_id, display_name, is_business, registered_at, listings_active, districts_count, cities_count, score_personhood, score_listings_count, score_geography, score_account_age, real_seller_score FROM seller_classifications
+SELECT seller_id, olx_user_id, display_name, is_business, registered_at, listings_active, districts_count, cities_count, score_personhood, score_listings_count, score_geography, score_account_age, real_seller_score, manual_label FROM seller_classifications
  WHERE olx_user_id = $1
 `
 
@@ -119,6 +119,7 @@ func (q *Queries) GetSellerClassification(ctx context.Context, olxUserID string)
 		&i.ScoreGeography,
 		&i.ScoreAccountAge,
 		&i.RealSellerScore,
+		&i.ManualLabel,
 	)
 	return i, err
 }
@@ -160,8 +161,28 @@ func (q *Queries) GetSellerCounts(ctx context.Context) ([]GetSellerCountsRow, er
 	return items, nil
 }
 
+const labelSeller = `-- name: LabelSeller :exec
+UPDATE sellers
+   SET manual_label = NULLIF($1::text, ''),
+       updated_at   = NOW()
+ WHERE olx_user_id  = $2
+`
+
+type LabelSellerParams struct {
+	ManualLabel string `json:"manual_label"`
+	OlxUserID   string `json:"olx_user_id"`
+}
+
+// Set or clear a manual label ('owner', 'agency', or "" to remove).
+// NULLIF converts empty string to NULL so the caller never needs to
+// distinguish between "set null" and "set empty string".
+func (q *Queries) LabelSeller(ctx context.Context, arg LabelSellerParams) error {
+	_, err := q.db.Exec(ctx, labelSeller, arg.ManualLabel, arg.OlxUserID)
+	return err
+}
+
 const listListingsForAPI = `-- name: ListListingsForAPI :many
-SELECT listing_id, olx_listing_id, url, title, price, currency, city, district, posted_at, listing_last_seen, seller_id, olx_user_id, seller_name, is_business, seller_registered_at, seller_listings_active, seller_districts_count, real_seller_score, property_type, deal_type FROM listings_with_classification
+SELECT listing_id, olx_listing_id, url, title, price, currency, city, district, posted_at, listing_last_seen, seller_id, olx_user_id, seller_name, is_business, seller_registered_at, seller_listings_active, seller_districts_count, real_seller_score, property_type, deal_type, manual_label FROM listings_with_classification
  WHERE posted_at >= NOW() - (interval '1 day' * $1::int)
    AND real_seller_score >= $2::numeric
    AND ($3::text = '' OR property_type = $3::text)
@@ -227,6 +248,7 @@ func (q *Queries) ListListingsForAPI(ctx context.Context, arg ListListingsForAPI
 			&i.RealSellerScore,
 			&i.PropertyType,
 			&i.DealType,
+			&i.ManualLabel,
 		); err != nil {
 			return nil, err
 		}
@@ -251,7 +273,7 @@ func (q *Queries) RefreshSellerStats(ctx context.Context) error {
 }
 
 const topRealSellers = `-- name: TopRealSellers :many
-SELECT seller_id, olx_user_id, display_name, is_business, registered_at, listings_active, districts_count, cities_count, score_personhood, score_listings_count, score_geography, score_account_age, real_seller_score FROM seller_classifications
+SELECT seller_id, olx_user_id, display_name, is_business, registered_at, listings_active, districts_count, cities_count, score_personhood, score_listings_count, score_geography, score_account_age, real_seller_score, manual_label FROM seller_classifications
  WHERE listings_active >= $1::int
  ORDER BY real_seller_score DESC, listings_active DESC, seller_id ASC
  LIMIT $2::int
@@ -288,6 +310,7 @@ func (q *Queries) TopRealSellers(ctx context.Context, arg TopRealSellersParams) 
 			&i.ScoreGeography,
 			&i.ScoreAccountAge,
 			&i.RealSellerScore,
+			&i.ManualLabel,
 		); err != nil {
 			return nil, err
 		}

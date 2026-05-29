@@ -61,6 +61,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/categories", s.categories)
 	mux.HandleFunc("GET /api/cities", s.cities)
 	mux.HandleFunc("POST /api/crawl", s.crawl)
+	mux.HandleFunc("PATCH /api/sellers/{olx_user_id}/label", s.labelSeller)
 	mux.HandleFunc("GET /api/worker-status", s.workerStatus)
 	return logRequest(s.Log, cors(mux))
 }
@@ -72,6 +73,8 @@ func (s *Server) Handler() http.Handler {
 // expose internal-only columns.
 type Listing struct {
 	ListingID       int64    `json:"listing_id"`
+	OlxUserID       string   `json:"olx_user_id"`
+	ManualLabel     string   `json:"manual_label,omitempty"` // "owner" | "agency" | ""
 	OlxListingID    string   `json:"olx_listing_id"`
 	URL             string   `json:"url"`
 	Title           string   `json:"title"`
@@ -233,6 +236,43 @@ type discoveryTask struct {
 	Page      int    `json:"page"`
 }
 
+// labelSeller sets or clears the manual_label for a seller.
+// PATCH /api/sellers/{olx_user_id}/label
+// Body: {"label": "owner"} | {"label": "agency"} | {"label": null}
+// Empty string or null in body → clears the label (NULLIF in SQL).
+func (s *Server) labelSeller(w http.ResponseWriter, r *http.Request) {
+	olxUserID := r.PathValue("olx_user_id")
+	if olxUserID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "missing olx_user_id"})
+		return
+	}
+
+	var body struct {
+		Label *string `json:"label"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+		return
+	}
+
+	label := ""
+	if body.Label != nil {
+		label = *body.Label
+	}
+
+	if err := s.Queries.LabelSeller(r.Context(), sqlc.LabelSellerParams{
+		ManualLabel: label, // NULLIF('', '') → NULL in DB
+		OlxUserID:   olxUserID,
+	}); err != nil {
+		s.Log.Error("label seller", "err", err)
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "db error"})
+		return
+	}
+
+	s.Log.Info("seller labeled", "olx_user_id", olxUserID, "label", label)
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "olx_user_id": olxUserID, "label": label})
+}
+
 func (s *Server) crawl(w http.ResponseWriter, r *http.Request) {
 	if s.Publisher == nil {
 		writeJSON(w, http.StatusServiceUnavailable,
@@ -349,6 +389,10 @@ func toAPIListing(r sqlc.ListingsWithClassification) Listing {
 	}
 	if r.DealType.Valid {
 		out.DealType = r.DealType.String
+	}
+	out.OlxUserID = r.OlxUserID
+	if r.ManualLabel.Valid {
+		out.ManualLabel = r.ManualLabel.String
 	}
 	if r.PostedAt.Valid {
 		s := r.PostedAt.Time.Format(time.RFC3339)

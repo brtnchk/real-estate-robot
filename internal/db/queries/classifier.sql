@@ -38,6 +38,15 @@ SELECT * FROM listings_with_classification
  ORDER BY real_seller_score DESC, posted_at DESC
  LIMIT sqlc.arg('limit_n')::int;
 
+-- name: LabelSeller :exec
+-- Set or clear a manual label ('owner', 'agency', or "" to remove).
+-- NULLIF converts empty string to NULL so the caller never needs to
+-- distinguish between "set null" and "set empty string".
+UPDATE sellers
+   SET manual_label = NULLIF(sqlc.arg('manual_label')::text, ''),
+       updated_at   = NOW()
+ WHERE olx_user_id  = sqlc.arg('olx_user_id');
+
 -- name: GetDistinctCities :many
 -- Cities present in the dataset with their listing counts, drives the
 -- frontend's city dropdown. City names are whatever OLX wrote

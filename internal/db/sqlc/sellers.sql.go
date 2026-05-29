@@ -24,7 +24,7 @@ func (q *Queries) CountSellers(ctx context.Context) (int64, error) {
 }
 
 const getSellerByOlxID = `-- name: GetSellerByOlxID :one
-SELECT id, olx_user_id, display_name, profile_url, registered_at, is_business, phone_hash, avatar_url, location, raw, first_seen_at, last_seen_at, last_scraped_at, created_at, updated_at, last_enriched_at FROM sellers WHERE olx_user_id = $1
+SELECT id, olx_user_id, display_name, profile_url, registered_at, is_business, phone_hash, avatar_url, location, raw, first_seen_at, last_seen_at, last_scraped_at, created_at, updated_at, last_enriched_at, manual_label FROM sellers WHERE olx_user_id = $1
 `
 
 func (q *Queries) GetSellerByOlxID(ctx context.Context, olxUserID string) (Seller, error) {
@@ -47,6 +47,7 @@ func (q *Queries) GetSellerByOlxID(ctx context.Context, olxUserID string) (Selle
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastEnrichedAt,
+		&i.ManualLabel,
 	)
 	return i, err
 }
@@ -89,7 +90,7 @@ ON CONFLICT (olx_user_id) DO UPDATE SET
     raw             = EXCLUDED.raw,
     last_seen_at    = NOW(),
     last_scraped_at = NOW()
-RETURNING id, olx_user_id, display_name, profile_url, registered_at, is_business, phone_hash, avatar_url, location, raw, first_seen_at, last_seen_at, last_scraped_at, created_at, updated_at, last_enriched_at
+RETURNING id, olx_user_id, display_name, profile_url, registered_at, is_business, phone_hash, avatar_url, location, raw, first_seen_at, last_seen_at, last_scraped_at, created_at, updated_at, last_enriched_at, manual_label
 `
 
 type UpsertSellerParams struct {
@@ -143,6 +144,7 @@ func (q *Queries) UpsertSeller(ctx context.Context, arg UpsertSellerParams) (Sel
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastEnrichedAt,
+		&i.ManualLabel,
 	)
 	return i, err
 }
